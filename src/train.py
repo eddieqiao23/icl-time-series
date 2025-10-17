@@ -53,9 +53,8 @@ def train(model, args, device):
     n_dims = model.n_dims
     print("n_dims: ", n_dims)
     bsize = args.training.batch_size
-    
-    # args.training.data is "gaussian" or "ar_warmup"
-    data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start, lag=task_kwargs["lag"])
+            
+    # Convert Args object to dict for task_kwargs
     task_kwargs = {}
     if hasattr(args.training, 'task_kwargs') and args.training.task_kwargs:
         if hasattr(args.training.task_kwargs, '__dict__'):
@@ -63,6 +62,18 @@ def train(model, args, device):
         else:
             task_kwargs = args.training.task_kwargs
     
+    print("task_kwargs: ", task_kwargs)
+    # Configure data sampler based on task type
+    if args.training.task == "ar_warmup":
+        # Use curriculum-controlled lag if available, otherwise fall back to task_kwargs
+        lag_value = curriculum.lag
+        assert lag_value is not None, "lag must be provided"
+        assert isinstance(lag_value, int), "lag must be an integer"
+        # For AR tasks, use model's n_dims to ensure consistent input dimension
+        data_sampler = get_data_sampler("ar_warmup", n_dims=n_dims, lag=lag_value)
+    else:
+        data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start)
+
     task_sampler = get_task_sampler(
         args.training.task,
         n_dims,
@@ -78,6 +89,15 @@ def train(model, args, device):
         data_sampler_args = {}
         task_sampler_args = {}
 
+        # Update data sampler if lag changed (for AR tasks)
+        if args.training.task == "ar_warmup" and curriculum.lag is not None:
+            current_lag = curriculum.lag
+            if current_lag != getattr(data_sampler, 'lag', None):
+                # Recreate data sampler with new lag
+                data_sampler = get_data_sampler("ar_warmup", n_dims=n_dims, lag=current_lag)
+            # Update task_kwargs with current lag for task sampler
+            task_sampler_args["lag"] = current_lag
+
         if "sparse" in args.training.task:
             task_sampler_args["valid_coords"] = curriculum.n_dims_truncated
         if num_training_examples is not None:
@@ -89,7 +109,7 @@ def train(model, args, device):
         xs = data_sampler.sample_xs(
             curriculum.n_points,
             bsize,
-            curriculum.n_dims_truncated,
+            n_dims,  # Use model's n_dims for AR tasks to ensure consistent dimension
             **data_sampler_args,
         )
 
@@ -123,6 +143,7 @@ def train(model, args, device):
                     ),
                     "n_points": curriculum.n_points,
                     "n_dims": curriculum.n_dims_truncated,
+                    "lag": curriculum.lag if curriculum.lag is not None else "N/A",
                 },
                 step=i,
             )

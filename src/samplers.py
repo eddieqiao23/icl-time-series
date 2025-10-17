@@ -20,8 +20,9 @@ class ARWarmupSampler(DataSampler):
         super().__init__(n_dims)
         self.lag = lag
         # Use GaussianSampler as default base sampler if none provided
+        # For AR tasks, always use 1-dimensional base sampler
         if base_sampler is None:
-            self.base_sampler = GaussianSampler(n_dims, **kwargs)
+            self.base_sampler = GaussianSampler(1, **kwargs)  # Always 1D for AR
         else:
             self.base_sampler = base_sampler
     
@@ -32,30 +33,44 @@ class ARWarmupSampler(DataSampler):
         Args:
             n_points: Number of time points to generate
             b_size: Batch size
-            n_dims_truncated: Unused for AR sampler (always uses full n_dims)
+            n_dims_truncated: Target output dimension (should match model.n_dims)
             seeds: Random seeds for reproducibility
             
         Returns:
-            xs: (b_size, n_points, lag) tensor of lagged features
+            xs: (b_size, n_points, n_dims_truncated) tensor of lagged features
         """
         T = n_points + self.lag
         
         # Generate base time series using the underlying sampler
         if seeds is not None:
-            # Handle seeds by creating temporary sampler instances
-            xs_b = torch.zeros(b_size, n_points, self.lag)
             generator = torch.Generator()
             assert len(seeds) == b_size
+            xs_b = torch.zeros(b_size, n_points, self.n_dims)
             for i, seed in enumerate(seeds):
                 generator.manual_seed(seed)
-                z = torch.randn(T, self.n_dims, generator=generator)
-                xs_b[i] = self._create_lagged_features(z)
-        else:
-            # Generate all at once
-            z = self.base_sampler.sample_xs(T, b_size, n_dims_truncated, seeds)
-            xs_b = torch.zeros(b_size, n_points, self.lag)
+                z = torch.randn(T, 1, generator=generator)  # Always use 1D for AR
+                lagged_features = self._create_lagged_features(z)
+                # Pad so that it reaches n_dims dimensions
+                if self.lag <= self.n_dims:
+                    xs_b[i, :, :self.lag] = lagged_features
+                    # Remaining dimensions are zero (already initialized)
+                else:
+                    xs_b[i] = lagged_features[:, :self.n_dims]
+        else: # No seed provided
+            z = self.base_sampler.sample_xs(T, b_size, 1, seeds)  # Always use 1D for AR
+            xs_b = torch.zeros(b_size, n_points, self.n_dims)
             for i in range(b_size):
-                xs_b[i] = self._create_lagged_features(z[i])
+                lagged_features = self._create_lagged_features(z[i])
+                # Pad or truncate to match n_dims
+                if self.lag <= self.n_dims:
+                    xs_b[i, :, :self.lag] = lagged_features
+                    # Remaining dimensions are zero (already initialized)
+                else:
+                    xs_b[i] = lagged_features[:, :self.n_dims]
+        
+        # Apply truncation if specified
+        if n_dims_truncated is not None:
+            xs_b = xs_b[:, :, :n_dims_truncated]
         
         return xs_b
     
@@ -64,21 +79,26 @@ class ARWarmupSampler(DataSampler):
         Create lagged features from a time series.
         
         Args:
-            z: (T, n_dims) time series
+            z: (T, 1) time series
             
         Returns:
             lagged: (n_points, lag) lagged features
+
+        e.g. z is (19,) and lagged is (11, 8) if lag = 8
         """
-        if z.shape[1] != 1:
-            raise ValueError(f"ARWarmupSampler expects 1-D series, got n_dims={z.shape[1]}")
-        
-        z = z[:, 0]  # (T,) - drop dimension since n_dims = 1
+        # Go from (T, 1) -> (T,)
+        if z.dim() == 2:
+            z = z[:, 0]
         
         # Create lagged indices
-        t_idx = torch.arange(self.lag, self.lag + (z.shape[0] - self.lag))  # (n_points,)
+        t_idx = torch.arange(self.lag, z.shape[0])  # (n_points,)
         lags = torch.arange(1, self.lag + 1)  # (lag,)
         correct_idx = (t_idx[:, None] - lags[None, :])  # (n_points, lag)
         
+        # print("z.shape: ", z.shape)
+        # print("z: ", z)
+        # print("z[correct_idx].shape: ", z[correct_idx].shape)
+        # print("z[correct_idx]: ", z[correct_idx])
         return z[correct_idx]  # (n_points, lag)
 
 

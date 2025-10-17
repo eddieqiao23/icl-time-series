@@ -12,6 +12,14 @@ class Curriculum:
         self.n_dims_schedule = args.dims
         self.n_points_schedule = args.points
         self.step_count = 0
+        
+        # Handle lag parameter if it exists (for AR tasks)
+        if hasattr(args, 'lag'):
+            self.lag = args.lag.start
+            self.lag_schedule = args.lag
+        else:
+            self.lag = None
+            self.lag_schedule = None
 
     def update(self):
         self.step_count += 1
@@ -19,6 +27,10 @@ class Curriculum:
             self.n_dims_truncated, self.n_dims_schedule
         )
         self.n_points = self.update_var(self.n_points, self.n_points_schedule)
+        
+        # Update lag if it's being tracked
+        if self.lag_schedule is not None:
+            self.lag = self.update_var(self.lag, self.lag_schedule)
 
     def update_var(self, var, schedule):
         if self.step_count % schedule.interval == 0:

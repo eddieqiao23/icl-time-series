@@ -127,13 +127,16 @@ class ARWarmup(Task):
 
     def evaluate(self, xs_b: torch.Tensor) -> torch.Tensor:
         """
-        xs_b: (B, N, q)  -->  y: (B, N)
-        y[b,n] = <w_b[b], xs_b[b,n,:]>
+        xs_b: (B, N, n_dims)  -->  y: (B, N)
+        y[b,n] = <w_b[b], xs_b[b,n,:lag]> (only uses first lag dimensions)
         """
-        if xs_b.ndim != 3 or xs_b.shape[2] != self.lag:
-            raise ValueError(f"xs_b must be (B,N,{self.lag}), got {xs_b.shape}")
-        w = self.w_b.to(xs_b.device, xs_b.dtype) # (B, q, 1)
-        y = (xs_b @ w)[:, :, 0] # (B, N)
+        if xs_b.ndim != 3 or xs_b.shape[2] < self.lag:
+            raise ValueError(f"xs_b must be (B,N,d) where d >= {self.lag}, got {xs_b.shape}")
+        
+        # Extract only the first 'lag' dimensions for AR computation
+        xs_lag = xs_b[:, :, :self.lag]  # (B, N, lag)
+        w = self.w_b.to(xs_b.device, xs_b.dtype) # (B, lag, 1)
+        y = (xs_lag @ w)[:, :, 0] # (B, N)
         return self.scale * y
 
     @staticmethod
