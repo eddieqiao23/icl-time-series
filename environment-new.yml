@@ -1,0 +1,18 @@
+name: in-context-learning
+channels: [conda-forge, defaults]
+dependencies:
+  - python==3.11.*
+  - pip
+  # core scientific stack
+  - numpy==1.26.*
+  - pandas==2.2.*
+  - scikit-learn==1.5.*
+  - matplotlib==3.8.*
+  - seaborn==0.13.*
+  - tqdm==4.66.*
+  - jupyter==1.0.0
+  - xgboost==2.1.*
+  # leave torch/transformers/wandb to pip (better wheels)
+  - pip:
+      - transformers==4.44.*
+      - wandb==0.17.*

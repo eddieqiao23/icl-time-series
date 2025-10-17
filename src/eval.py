@@ -131,6 +131,44 @@ def gen_overlapping_train_test(data_sampler, n_points, b_size):
     return xs_train_pre, xs_test_post
 
 
+def gen_ar_warmup(data_sampler, n_points, b_size, lag):
+    """
+    DEPRECATED: Use ARWarmupSampler from samplers.py instead.
+    This function is kept for backward compatibility with notebooks.
+    
+    Args:
+        data_sampler: Data sampler instance
+        n_points: Number of time points
+        b_size: Batch size
+        lag: Number of lags for AR model
+        
+    Returns:
+        xs: (B, n_points, q), each row is [z_{t-1}, ..., z_{t-q}]
+    """
+    import warnings
+    warnings.warn(
+        "gen_ar_warmup is deprecated. Use ARWarmupSampler from samplers.py instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    T = n_points + lag
+    # print("T: ", T, "b_size: ", b_size, "lag: ", lag)
+    z = data_sampler.sample_xs(T, b_size) # (B, T, D)
+    print("z before: ", z)
+    if z.shape[2] != 1:
+        raise ValueError(f"gen_ar_warmup expects 1-D series, got D={z.shape[2]}")
+    z = z[..., 0] # (B, T), drop final dimension since D = 1
+    print("z after: ", z)
+
+    # interleave these so it extracts lagged entries for every row
+    t_idx = torch.arange(lag, T) # (n_points,)
+    lags  = torch.arange(1, lag + 1) # (q,) 1, 2, ..., q
+    correct_idx  = (t_idx[:, None] - lags[None, :]) # (n_points, q)
+    print(correct_idx)
+
+    xs = z[:, correct_idx] # (B, n_points, q)
+    return xs, None
+
 def aggregate_metrics(metrics, bootstrap_trials=1000):
     """
     Takes as input a tensor of shape (num_eval, n_points) and returns a dict with

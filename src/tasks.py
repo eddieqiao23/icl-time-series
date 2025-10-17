@@ -60,6 +60,7 @@ def get_task_sampler(
         "quadratic_regression": QuadraticRegression,
         "relu_2nn_regression": Relu2nnRegression,
         "decision_tree": DecisionTree,
+        "ar_warmup": ARWarmup,
     }
     if task_name in task_names_to_classes:
         task_cls = task_names_to_classes[task_name]
@@ -109,6 +110,42 @@ class LinearRegression(Task):
     @staticmethod
     def get_training_metric():
         return mean_squared_error
+
+class ARWarmup(Task):
+    """
+    AR(q), all values are scalars.
+    xs_b shape: (B, N, q), where each row is last q values of the single series
+    Returns y of shape (B, N), where y[b,n] = <w_b[b], xs_b[b,n,:]>.
+    """
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, lag=1, scale=1.0):
+        # n_dims is ignored; feature dim is q in this univariate setup
+        super().__init__(n_dims, batch_size, pool_dict, seeds)
+        assert pool_dict is None and seeds is None
+        self.lag, self.scale = lag, scale
+        # Randomize self.lag values for each batch
+        self.w_b = torch.randn(self.b_size, self.lag, 1)
+
+    def evaluate(self, xs_b: torch.Tensor) -> torch.Tensor:
+        """
+        xs_b: (B, N, q)  -->  y: (B, N)
+        y[b,n] = <w_b[b], xs_b[b,n,:]>
+        """
+        if xs_b.ndim != 3 or xs_b.shape[2] != self.lag:
+            raise ValueError(f"xs_b must be (B,N,{self.lag}), got {xs_b.shape}")
+        w = self.w_b.to(xs_b.device, xs_b.dtype) # (B, q, 1)
+        y = (xs_b @ w)[:, :, 0] # (B, N)
+        return self.scale * y
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+    def get_weights(self):
+        return self.w_b
 
 
 class SparseLinearRegression(LinearRegression):

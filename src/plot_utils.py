@@ -37,6 +37,9 @@ relevant_model_names = {
         "3-Nearest Neighbors",
         "2-layer NN, GD",
     ],
+    "ar_warmup": [
+        "Transformer",
+    ],
 }
 
 

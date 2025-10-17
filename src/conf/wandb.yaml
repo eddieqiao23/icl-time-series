@@ -1,5 +1,5 @@
 wandb:
-    project: in-context-training
-    entity: your-entity
-    notes:
+    project: in-context-learning
+    entity: null
+    notes: "In-context learning experiment"
     log_every_steps: 100
