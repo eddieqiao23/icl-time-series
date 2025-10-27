@@ -117,13 +117,21 @@ class ARWarmup(Task):
     xs_b shape: (B, N, q), where each row is last q values of the single series
     Returns y of shape (B, N), where y[b,n] = <w_b[b], xs_b[b,n,:]>.
     """
-    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, lag=1, scale=1.0):
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, lag=1, scale=1.0, coefficients=None):
         # n_dims is ignored; feature dim is q in this univariate setup
         super().__init__(n_dims, batch_size, pool_dict, seeds)
         assert pool_dict is None and seeds is None
         self.lag, self.scale = lag, scale
-        # Randomize self.lag values for each batch
-        self.w_b = torch.randn(self.b_size, self.lag, 1)
+        
+        # Use provided coefficients if available, otherwise generate random ones
+        if coefficients is not None:
+            # coefficients should be (batch_size, lag)
+            assert coefficients.shape == (batch_size, lag), \
+                f"Coefficients shape {coefficients.shape} doesn't match expected ({batch_size}, {lag})"
+            self.w_b = coefficients.unsqueeze(-1)  # (batch_size, lag, 1)
+        else:
+            # Fallback: randomize self.lag values for each batch
+            self.w_b = torch.randn(self.b_size, self.lag, 1)
 
     def evaluate(self, xs_b: torch.Tensor) -> torch.Tensor:
         """
@@ -133,7 +141,7 @@ class ARWarmup(Task):
         if xs_b.ndim != 3 or xs_b.shape[2] < self.lag:
             raise ValueError(f"xs_b must be (B,N,d) where d >= {self.lag}, got {xs_b.shape}")
         
-        # Extract only the first 'lag' dimensions for AR computation
+        # Extract only the first 'lag' dimensions for AR computation (make sure we aren't using extra)
         xs_lag = xs_b[:, :, :self.lag]  # (B, N, lag)
         w = self.w_b.to(xs_b.device, xs_b.dtype) # (B, lag, 1)
         y = (xs_lag @ w)[:, :, 0] # (B, N)

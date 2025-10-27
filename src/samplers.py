@@ -14,7 +14,7 @@ class DataSampler:
 class ARWarmupSampler(DataSampler):
     """
     AR(q) time series sampler for warmup experiments.
-    Generates lagged features for autoregressive modeling.
+    Generates actual AR(q) sequences with known coefficients.
     """
     def __init__(self, n_dims, lag=3, base_sampler=None, **kwargs):
         super().__init__(n_dims)
@@ -25,10 +25,21 @@ class ARWarmupSampler(DataSampler):
             self.base_sampler = GaussianSampler(1, **kwargs)  # Always 1D for AR
         else:
             self.base_sampler = base_sampler
+        self.current_coefficients = None # Gets set in train.py
+        self.coefficient_scale = kwargs.get('coefficient_scale', 0.3) # Default scale from experiments
+    
+    def generate_bounded_coefficients(self, batch_size):
+        """
+        Generate AR coefficients that prevent explosive growth.
+        Ensures the AR process remains bounded/stationary.
+        """
+        # Generally, we find that std = 0.3 works pretty well
+        coeffs = torch.randn(batch_size, self.lag) * self.coefficient_scale
+        return coeffs
     
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         """
-        Generate AR(q) lagged features.
+        Generate AR(q) sequences with known coefficients and extract lagged features.
         
         Args:
             n_points: Number of time points to generate
@@ -38,37 +49,52 @@ class ARWarmupSampler(DataSampler):
             
         Returns:
             xs: (b_size, n_points, n_dims_truncated) tensor of lagged features
-        """
+        """        
+        # Generate AR sequences using these coefficients
         T = n_points + self.lag
+        xs_b = torch.zeros(b_size, n_points, self.n_dims)
         
-        # Generate base time series using the underlying sampler
         if seeds is not None:
             generator = torch.Generator()
-            assert len(seeds) == b_size
-            xs_b = torch.zeros(b_size, n_points, self.n_dims)
             for i, seed in enumerate(seeds):
                 generator.manual_seed(seed)
-                z = torch.randn(T, 1, generator=generator)  # Always use 1D for AR
+                # Generate initial lag values randomly
+                z = torch.zeros(T)
+                z[:self.lag] = torch.randn(self.lag, generator=generator)
+                
+                # Finish the remaining N-q values for AR(q) process
+                # Might be slow to parallelize?
+                for t in range(self.lag, T):
+                    # x_t = w_1*x_{t-1} + w_2*x_{t-2} + ... + w_q*x_{t-q}
+                    z[t] = sum(self.current_coefficients[i, j] * z[t-1-j] for j in range(self.lag))
+                
+                # Create lagged features from this AR sequence
                 lagged_features = self._create_lagged_features(z)
-                # Pad so that it reaches n_dims dimensions
+                # Pad or crop so that it reaches n_dims dimensions
                 if self.lag <= self.n_dims:
                     xs_b[i, :, :self.lag] = lagged_features
-                    # Remaining dimensions are zero (already initialized)
                 else:
                     xs_b[i] = lagged_features[:, :self.n_dims]
-        else: # No seed provided
-            z = self.base_sampler.sample_xs(T, b_size, 1, seeds)  # Always use 1D for AR
-            xs_b = torch.zeros(b_size, n_points, self.n_dims)
+        else:
             for i in range(b_size):
-                lagged_features = self._create_lagged_features(z[i])
+                # Generate initial lag values randomly
+                z = torch.zeros(T)
+                z[:self.lag] = torch.randn(self.lag)
+                
+                # Finish the remaining N-q values for AR(q) process
+                # Might be slow to parallelize?
+                for t in range(self.lag, T):
+                    # x_t = w_1*x_{t-1} + w_2*x_{t-2} + ... + w_q*x_{t-q}
+                    z[t] = sum(self.current_coefficients[i, j] * z[t-1-j] for j in range(self.lag))
+                
+                # Create lagged features from this AR sequence
+                lagged_features = self._create_lagged_features(z)
                 # Pad or truncate to match n_dims
                 if self.lag <= self.n_dims:
                     xs_b[i, :, :self.lag] = lagged_features
-                    # Remaining dimensions are zero (already initialized)
                 else:
                     xs_b[i] = lagged_features[:, :self.n_dims]
         
-        # Apply truncation if specified
         if n_dims_truncated is not None:
             xs_b = xs_b[:, :, :n_dims_truncated]
         
@@ -94,12 +120,8 @@ class ARWarmupSampler(DataSampler):
         t_idx = torch.arange(self.lag, z.shape[0])  # (n_points,)
         lags = torch.arange(1, self.lag + 1)  # (lag,)
         correct_idx = (t_idx[:, None] - lags[None, :])  # (n_points, lag)
-        
-        # print("z.shape: ", z.shape)
-        # print("z: ", z)
-        # print("z[correct_idx].shape: ", z[correct_idx].shape)
-        # print("z[correct_idx]: ", z[correct_idx])
-        return z[correct_idx]  # (n_points, lag)
+
+        return z[correct_idx]
 
 
 def get_data_sampler(data_name, n_dims, **kwargs):

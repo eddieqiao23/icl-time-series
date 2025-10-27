@@ -89,11 +89,9 @@ def train(model, args, device):
         data_sampler_args = {}
         task_sampler_args = {}
 
-        # Update data sampler if lag changed (for AR tasks)
         if args.training.task == "ar_warmup" and curriculum.lag is not None:
             current_lag = curriculum.lag
             if current_lag != getattr(data_sampler, 'lag', None):
-                # Recreate data sampler with new lag
                 data_sampler = get_data_sampler("ar_warmup", n_dims=n_dims, lag=current_lag)
             # Update task_kwargs with current lag for task sampler
             task_sampler_args["lag"] = current_lag
@@ -106,15 +104,23 @@ def train(model, args, device):
             data_sampler_args["seeds"] = seeds
             task_sampler_args["seeds"] = [s + 1 for s in seeds]
 
+        # Generate bounded coefficients, shouldn't blow up
+        if args.training.task == "ar_warmup":
+            if data_sampler.current_coefficients is None or not hasattr(data_sampler, 'current_coefficients'):
+                data_sampler.current_coefficients = data_sampler.generate_bounded_coefficients(bsize)
+        
         xs = data_sampler.sample_xs(
             curriculum.n_points,
             bsize,
-            n_dims,  # Use model's n_dims for AR tasks to ensure consistent dimension
+            n_dims,
             **data_sampler_args,
         )
 
+        # For AR tasks, pass coefficients from data sampler to task sampler
+        if args.training.task == "ar_warmup" and hasattr(data_sampler, 'current_coefficients') and data_sampler.current_coefficients is not None:
+            task_sampler_args["coefficients"] = data_sampler.current_coefficients
+        
         task = task_sampler(**task_sampler_args)
-        # print(f"Shape of xs: {xs.shape}")
         ys = task.evaluate(xs)
 
         loss_func = task.get_training_metric()
