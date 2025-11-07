@@ -69,8 +69,10 @@ def train(model, args, device):
         lag_value = curriculum.lag
         assert lag_value is not None, "lag must be provided"
         assert isinstance(lag_value, int), "lag must be an integer"
+        # Allow noise_std to be configured via task_kwargs
+        noise_std = task_kwargs.get('noise_std', 0.2)
         # For AR tasks, use model's n_dims to ensure consistent input dimension
-        data_sampler = get_data_sampler("ar_warmup", n_dims=n_dims, lag=lag_value)
+        data_sampler = get_data_sampler("ar_warmup", n_dims=n_dims, lag=lag_value, noise_std=noise_std)
     else:
         data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start)
 
@@ -92,7 +94,9 @@ def train(model, args, device):
         if args.training.task == "ar_warmup" and curriculum.lag is not None:
             current_lag = curriculum.lag
             if current_lag != getattr(data_sampler, 'lag', None):
-                data_sampler = get_data_sampler("ar_warmup", n_dims=n_dims, lag=current_lag)
+                # Preserve noise_std when recreating sampler
+                noise_std = getattr(data_sampler, 'noise_std', 0.2)
+                data_sampler = get_data_sampler("ar_warmup", n_dims=n_dims, lag=current_lag, noise_std=noise_std)
             # Update task_kwargs with current lag for task sampler
             task_sampler_args["lag"] = current_lag
 
@@ -121,7 +125,12 @@ def train(model, args, device):
             task_sampler_args["coefficients"] = data_sampler.current_coefficients
         
         task = task_sampler(**task_sampler_args)
-        ys = task.evaluate(xs)
+        
+        # For AR tasks, use the actual noisy next values instead of noiseless predictions
+        if args.training.task == "ar_warmup" and hasattr(data_sampler, 'current_ys'):
+            ys = data_sampler.current_ys
+        else:
+            ys = task.evaluate(xs)
 
         loss_func = task.get_training_metric()
 

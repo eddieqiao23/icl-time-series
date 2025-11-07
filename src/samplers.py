@@ -16,9 +16,10 @@ class ARWarmupSampler(DataSampler):
     AR(q) time series sampler for warmup experiments.
     Generates actual AR(q) sequences with known coefficients.
     """
-    def __init__(self, n_dims, lag=3, base_sampler=None, **kwargs):
+    def __init__(self, n_dims, lag=3, base_sampler=None, noise_std=0.2, **kwargs):
         super().__init__(n_dims)
         self.lag = lag
+        self.noise_std = noise_std
         # Use GaussianSampler as default base sampler if none provided
         # For AR tasks, always use 1-dimensional base sampler
         if base_sampler is None:
@@ -26,15 +27,17 @@ class ARWarmupSampler(DataSampler):
         else:
             self.base_sampler = base_sampler
         self.current_coefficients = None # Gets set in train.py
-        self.coefficient_scale = kwargs.get('coefficient_scale', 0.3) # Default scale from experiments
     
     def generate_bounded_coefficients(self, batch_size):
         """
         Generate AR coefficients that prevent explosive growth.
         Ensures the AR process remains bounded/stationary.
+        
+        Uses normalization by lag: x_t = (1/d) * sum(x_{t-i} * a_i) where a_i ~ N(0, 1)
+        This is more natural and increases stability compared to scaling down variance.
         """
-        # Generally, we find that std = 0.3 works pretty well
-        coeffs = torch.randn(batch_size, self.lag) * self.coefficient_scale
+        # Generate coefficients from N(0, 1) and normalize by 1/lag
+        coeffs = torch.randn(batch_size, self.lag) / self.lag
         return coeffs
     
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
@@ -53,6 +56,7 @@ class ARWarmupSampler(DataSampler):
         # Generate AR sequences using these coefficients
         T = n_points + self.lag
         xs_b = torch.zeros(b_size, n_points, self.n_dims)
+        ys_b = torch.zeros(b_size, n_points)  # Store actual noisy next values
         
         if seeds is not None:
             generator = torch.Generator()
@@ -65,8 +69,9 @@ class ARWarmupSampler(DataSampler):
                 # Finish the remaining N-q values for AR(q) process
                 # Might be slow to parallelize?
                 for t in range(self.lag, T):
-                    # x_t = w_1*x_{t-1} + w_2*x_{t-2} + ... + w_q*x_{t-q}
+                    # x_t = (1/d) * sum(x_{t-i} * a_i) + ε_t, where ε_t ~ N(0, noise_std^2)
                     z[t] = sum(self.current_coefficients[i, j] * z[t-1-j] for j in range(self.lag))
+                    z[t] += torch.randn(1, generator=generator).item() * self.noise_std
                 
                 # Create lagged features from this AR sequence
                 lagged_features = self._create_lagged_features(z)
@@ -75,6 +80,11 @@ class ARWarmupSampler(DataSampler):
                     xs_b[i, :, :self.lag] = lagged_features
                 else:
                     xs_b[i] = lagged_features[:, :self.n_dims]
+                
+                # Store the actual next values (the noisy values, not predictions)
+                # xs[i] contains lagged features for predicting z[lag+i]
+                # so ys[i] should be the actual value z[lag+i]
+                ys_b[i, :] = z[self.lag:self.lag+n_points]
         else:
             for i in range(b_size):
                 # Generate initial lag values randomly
@@ -84,8 +94,9 @@ class ARWarmupSampler(DataSampler):
                 # Finish the remaining N-q values for AR(q) process
                 # Might be slow to parallelize?
                 for t in range(self.lag, T):
-                    # x_t = w_1*x_{t-1} + w_2*x_{t-2} + ... + w_q*x_{t-q}
+                    # x_t = (1/d) * sum(x_{t-i} * a_i) + ε_t, where ε_t ~ N(0, noise_std^2)
                     z[t] = sum(self.current_coefficients[i, j] * z[t-1-j] for j in range(self.lag))
+                    z[t] += torch.randn(1).item() * self.noise_std
                 
                 # Create lagged features from this AR sequence
                 lagged_features = self._create_lagged_features(z)
@@ -94,9 +105,17 @@ class ARWarmupSampler(DataSampler):
                     xs_b[i, :, :self.lag] = lagged_features
                 else:
                     xs_b[i] = lagged_features[:, :self.n_dims]
+                
+                # Store the actual next values (the noisy values, not predictions)
+                # xs[i] contains lagged features for predicting z[lag+i]
+                # so ys[i] should be the actual value z[lag+i]
+                ys_b[i, :] = z[self.lag:self.lag+n_points]
         
         if n_dims_truncated is not None:
             xs_b = xs_b[:, :, :n_dims_truncated]
+        
+        # Store ys_b in the sampler so it can be accessed
+        self.current_ys = ys_b
         
         return xs_b
     
