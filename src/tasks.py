@@ -61,6 +61,7 @@ def get_task_sampler(
         "relu_2nn_regression": Relu2nnRegression,
         "decision_tree": DecisionTree,
         "ar_warmup": ARWarmup,
+        "ar_mixture": ARMixture,
     }
     if task_name in task_names_to_classes:
         task_cls = task_names_to_classes[task_name]
@@ -157,6 +158,10 @@ class ARWarmup(Task):
 
     def get_weights(self):
         return self.w_b
+
+
+class ARMixture(ARWarmup):
+    pass
 
 
 class SparseLinearRegression(LinearRegression):

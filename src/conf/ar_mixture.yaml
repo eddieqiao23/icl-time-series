@@ -1,0 +1,45 @@
+inherit: 
+    - models/tiny.yaml
+
+model:
+    n_dims: 3
+    n_positions: 101
+
+training:
+    task: ar_mixture
+    data: ar_mixture
+    task_kwargs:
+        num_mixture_models: 5
+    batch_size: 64
+    learning_rate: 0.0001
+    save_every_steps: 1000
+    keep_every_steps: 100000
+    train_steps: 5001
+    curriculum:
+        dims:
+            start: 1
+            end: 1
+            inc: 1
+            interval: 2000
+        points:
+            start: 11
+            end: 11
+            inc: 2
+            interval: 2000
+        lag:
+            start: 3
+            end: 3
+            inc: 1
+            interval: 1000
+
+out_dir: ../models/ar_warmup
+
+wandb:
+    project: ar_mixture
+    entity: null
+    notes: ""
+    log_every_steps: 100
+
+
+test_run: False
+

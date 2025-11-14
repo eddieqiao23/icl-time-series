@@ -143,10 +143,28 @@ class ARWarmupSampler(DataSampler):
         return z[correct_idx]
 
 
+class ARMixtureSampler(ARWarmupSampler):
+    """
+    Mixture of AR(q) models. Fix a coefficient pool throughout training, so we are sampling
+    coefficients from it during both training and testing.
+    """
+    def __init__(self, n_dims, lag=3, base_sampler=None, noise_std=0.2, num_mixture_models=5, **kwargs):
+        super().__init__(n_dims, lag, base_sampler, noise_std, **kwargs)
+        self.num_mixture_models = num_mixture_models
+        self.coefficient_pool = self.generate_bounded_coefficients(num_mixture_models)
+    
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        coeff_indices = torch.randint(0, self.num_mixture_models, (b_size,))
+        self.current_coefficients = self.coefficient_pool[coeff_indices]
+        self.current_coefficient_ids = coeff_indices
+        return super().sample_xs(n_points, b_size, n_dims_truncated, seeds)
+
+
 def get_data_sampler(data_name, n_dims, **kwargs):
     names_to_classes = {
         "gaussian": GaussianSampler,
         "ar_warmup": ARWarmupSampler,
+        "ar_mixture": ARMixtureSampler,
     }
     if data_name in names_to_classes:
         sampler_cls = names_to_classes[data_name]

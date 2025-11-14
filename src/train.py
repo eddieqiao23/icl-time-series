@@ -63,25 +63,39 @@ def train(model, args, device):
             task_kwargs = args.training.task_kwargs
     
     print("task_kwargs: ", task_kwargs)
-    # Configure data sampler based on task type
+    
     if args.training.task == "ar_warmup":
-        # Use curriculum-controlled lag if available, otherwise fall back to task_kwargs
         lag_value = curriculum.lag
         assert lag_value is not None, "lag must be provided"
         assert isinstance(lag_value, int), "lag must be an integer"
-        # Allow noise_std to be configured via task_kwargs
         noise_std = task_kwargs.get('noise_std', 0.2)
-        # For AR tasks, use model's n_dims to ensure consistent input dimension
         data_sampler = get_data_sampler("ar_warmup", n_dims=n_dims, lag=lag_value, noise_std=noise_std)
+    elif args.training.task == "ar_mixture":
+        lag_value = curriculum.lag
+        assert lag_value is not None, "lag must be provided"
+        assert isinstance(lag_value, int), "lag must be an integer"
+        noise_std = task_kwargs.get('noise_std', 0.2)
+        num_mixture_models = task_kwargs.get('num_mixture_models', 5)
+        data_sampler = get_data_sampler("ar_mixture", n_dims=n_dims, lag=lag_value, 
+                                       noise_std=noise_std, num_mixture_models=num_mixture_models)
+        
+        # Save the coefficients so they can be used during testing
+        if not args.test_run:
+            coeff_pool_path = os.path.join(args.out_dir, "coefficient_pool.pt")
+            torch.save(data_sampler.coefficient_pool, coeff_pool_path)
+            print(f"Saved coefficient pool to {coeff_pool_path}")
     else:
         data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start)
 
+    filtered_task_kwargs = {k: v for k, v in task_kwargs.items() 
+                           if k not in ['num_mixture_models', 'noise_std']}
+    
     task_sampler = get_task_sampler(
         args.training.task,
         n_dims,
         bsize,
         num_tasks=args.training.num_tasks,
-        **task_kwargs,
+        **filtered_task_kwargs,
     )
     pbar = tqdm(range(starting_step, args.training.train_steps))
 
@@ -94,10 +108,17 @@ def train(model, args, device):
         if args.training.task == "ar_warmup" and curriculum.lag is not None:
             current_lag = curriculum.lag
             if current_lag != getattr(data_sampler, 'lag', None):
-                # Preserve noise_std when recreating sampler
                 noise_std = getattr(data_sampler, 'noise_std', 0.2)
                 data_sampler = get_data_sampler("ar_warmup", n_dims=n_dims, lag=current_lag, noise_std=noise_std)
-            # Update task_kwargs with current lag for task sampler
+            task_sampler_args["lag"] = current_lag
+        
+        if args.training.task == "ar_mixture" and curriculum.lag is not None:
+            current_lag = curriculum.lag
+            if current_lag != getattr(data_sampler, 'lag', None):
+                noise_std = getattr(data_sampler, 'noise_std', 0.2)
+                num_mixture_models = getattr(data_sampler, 'num_mixture_models', 5)
+                data_sampler = get_data_sampler("ar_mixture", n_dims=n_dims, lag=current_lag, 
+                                               noise_std=noise_std, num_mixture_models=num_mixture_models)
             task_sampler_args["lag"] = current_lag
 
         if "sparse" in args.training.task:
@@ -120,14 +141,13 @@ def train(model, args, device):
             **data_sampler_args,
         )
 
-        # For AR tasks, pass coefficients from data sampler to task sampler
-        if args.training.task == "ar_warmup" and hasattr(data_sampler, 'current_coefficients') and data_sampler.current_coefficients is not None:
+        # Ability to feed in coefficients
+        if args.training.task in ["ar_warmup", "ar_mixture"] and hasattr(data_sampler, 'current_coefficients') and data_sampler.current_coefficients is not None:
             task_sampler_args["coefficients"] = data_sampler.current_coefficients
         
         task = task_sampler(**task_sampler_args)
         
-        # For AR tasks, use the actual noisy next values instead of noiseless predictions
-        if args.training.task == "ar_warmup" and hasattr(data_sampler, 'current_ys'):
+        if args.training.task in ["ar_warmup", "ar_mixture"] and hasattr(data_sampler, 'current_ys'):
             ys = data_sampler.current_ys
         else:
             ys = task.evaluate(xs)
