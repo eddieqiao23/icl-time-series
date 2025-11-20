@@ -151,11 +151,17 @@ class ARMixtureSampler(ARWarmupSampler):
     Generates multi-run samples where each sample contains multiple AR sequences,
     each generated from a randomly selected model from the coefficient pool.
     """
-    def __init__(self, n_dims, lag=3, base_sampler=None, noise_std=0.2, num_mixture_models=5, num_runs=3, **kwargs):
+    def __init__(self, n_dims, lag=3, base_sampler=None, noise_std=0.2, num_mixture_models=5, num_runs=3, use_gpu=True, device=None, **kwargs):
         super().__init__(n_dims, lag, base_sampler, noise_std, **kwargs)
         self.num_mixture_models = num_mixture_models
         self.num_runs = num_runs
+        self.use_gpu = use_gpu
+        self.device = device if device is not None else (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.coefficient_pool = self.generate_bounded_coefficients(num_mixture_models)
+
+        # Move coefficient pool to GPU if using GPU sampling
+        if self.use_gpu and self.device.type in ['cuda', 'mps']:
+            self.coefficient_pool = self.coefficient_pool.to(self.device)
 
     def _generate_single_run(self, run_length, coefficients, seed=None):
         """
@@ -190,6 +196,106 @@ class ARMixtureSampler(ARWarmupSampler):
         # Return sequence starting from the first predictable point
         return z[self.lag:self.lag + run_length + 1]
 
+    def _sample_xs_gpu(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        """
+        GPU-parallelized AR mixture sampling - generates all sequences in parallel.
+
+        Args:
+            n_points: Length of each run (run_length)
+            b_size: Batch size
+            n_dims_truncated: Should be 2*num_runs - 1
+            seeds: Random seeds for reproducibility
+
+        Returns:
+            xs: (b_size, n_points, 2*num_runs - 1) tensor in progressive format
+        """
+        run_length = n_points
+        expected_dims = 2 * self.num_runs - 1
+
+        if n_dims_truncated is not None and n_dims_truncated != expected_dims:
+            print(f"Warning: n_dims_truncated={n_dims_truncated} but expected {expected_dims} for {self.num_runs} runs")
+
+        # Total number of sequences to generate in parallel
+        total_sequences = b_size * self.num_runs
+
+        # Sample coefficient indices for all sequences at once
+        if seeds is not None:
+            # Use seeds to deterministically sample coefficients
+            torch.manual_seed(seeds[0])  # Use first seed for coefficient sampling
+        coeff_indices = torch.randint(0, self.num_mixture_models, (total_sequences,), device=self.device)
+        all_coefficients = self.coefficient_pool[coeff_indices]  # (total_sequences, lag)
+
+        # Generate all AR sequences in parallel
+        T = run_length + 1 + self.lag
+        z_batch = torch.zeros(total_sequences, T, device=self.device)
+
+        # Initialize first lag values
+        if seeds is not None:
+            # For deterministic generation with seeds
+            for i in range(total_sequences):
+                batch_idx = i // self.num_runs
+                run_idx = i % self.num_runs
+                generator = torch.Generator(device=self.device)
+                generator.manual_seed(int(seeds[batch_idx]) + run_idx)
+                z_batch[i, :self.lag] = torch.randn(self.lag, generator=generator, device=self.device)
+        else:
+            z_batch[:, :self.lag] = torch.randn(total_sequences, self.lag, device=self.device)
+
+        # Generate noise for all timesteps
+        if seeds is not None:
+            noise_batch = torch.zeros(total_sequences, T - self.lag, device=self.device)
+            for i in range(total_sequences):
+                batch_idx = i // self.num_runs
+                run_idx = i % self.num_runs
+                generator = torch.Generator(device=self.device)
+                generator.manual_seed(int(seeds[batch_idx]) + run_idx + 1000)  # Offset for noise
+                noise_batch[i] = torch.randn(T - self.lag, generator=generator, device=self.device) * self.noise_std
+        else:
+            noise_batch = torch.randn(total_sequences, T - self.lag, device=self.device) * self.noise_std
+
+        # Vectorized AR generation across batch dimension
+        # Still sequential in time (unavoidable for AR), but parallel across all sequences
+        for t in range(self.lag, T):
+            # For each sequence, compute weighted sum of previous lag values
+            # z[t] = sum(coeff[j] * z[t-1-j] for j in range(lag)) + noise
+            lagged_vals = torch.stack([z_batch[:, t-1-j] for j in range(self.lag)], dim=1)  # (total_sequences, lag)
+            z_batch[:, t] = (all_coefficients * lagged_vals).sum(dim=1) + noise_batch[:, t - self.lag]
+
+        # Extract the relevant part of sequences
+        sequences = z_batch[:, self.lag:self.lag + run_length + 1]  # (total_sequences, run_length + 1)
+
+        # Reshape and format output
+        xs_b = torch.zeros(b_size, run_length, expected_dims, device=self.device)
+        ys_b = torch.zeros(b_size, run_length, device=self.device)
+
+        for batch_idx in range(b_size):
+            for run_idx in range(self.num_runs):
+                seq_idx = batch_idx * self.num_runs + run_idx
+                sequence = sequences[seq_idx]
+
+                # Fill in the matrix columns
+                # Format: [run1_val, run1_out, run2_val, run2_out, ..., runN_val]
+                if run_idx < self.num_runs - 1:
+                    # For runs 1 to N-1: both val and out columns
+                    val_col = 2 * run_idx
+                    out_col = 2 * run_idx + 1
+                    xs_b[batch_idx, :, val_col] = sequence[:run_length]
+                    xs_b[batch_idx, :, out_col] = sequence[1:run_length+1]
+                else:
+                    # For final run: only val column
+                    val_col = 2 * run_idx
+                    xs_b[batch_idx, :, val_col] = sequence[:run_length]
+                    ys_b[batch_idx, :] = sequence[1:run_length+1]
+
+        # Move back to CPU for compatibility with training loop
+        xs_b = xs_b.cpu()
+        ys_b = ys_b.cpu()
+
+        # Store ys_b for use in train.py
+        self.current_ys = ys_b
+
+        return xs_b
+
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         """
         Generate multi-run AR mixture samples.
@@ -204,6 +310,11 @@ class ARMixtureSampler(ARWarmupSampler):
             xs: (b_size, n_points, 2*num_runs - 1) tensor in progressive format
                 Each row: [run1_val, run1_out, run2_val, run2_out, ..., runN_val]
         """
+        # Use GPU-parallelized version if enabled and device supports it
+        if self.use_gpu and self.device.type in ['cuda', 'mps']:
+            return self._sample_xs_gpu(n_points, b_size, n_dims_truncated, seeds)
+
+        # Fall back to CPU version
         run_length = n_points
         expected_dims = 2 * self.num_runs - 1
 

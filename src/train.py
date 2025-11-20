@@ -2,6 +2,8 @@ import os
 import argparse
 from random import randint
 import uuid
+import time
+from collections import defaultdict
 
 from tqdm import tqdm
 import torch
@@ -85,16 +87,18 @@ def train(model, args, device):
             print(f"Warning: model.n_dims={n_dims} but expected {expected_n_dims} for num_runs={num_runs}")
             print(f"Using model.n_dims={n_dims} anyway, but this may cause issues.")
 
+        # Pass device to enable GPU-accelerated sampling
         data_sampler = get_data_sampler("ar_mixture", n_dims=n_dims, lag=lag_value,
                                        noise_std=noise_std, num_mixture_models=num_mixture_models,
-                                       num_runs=num_runs)
+                                       num_runs=num_runs, use_gpu=True, device=device)
 
         # Save the coefficients so they can be used during testing
         if not args.test_run:
             coeff_pool_path = os.path.join(args.out_dir, "coefficient_pool.pt")
-            torch.save(data_sampler.coefficient_pool, coeff_pool_path)
+            torch.save(data_sampler.coefficient_pool.cpu(), coeff_pool_path)  # Save CPU version
             print(f"Saved coefficient pool to {coeff_pool_path}")
             print(f"Training with {num_runs} runs per sample, {num_mixture_models} models in pool")
+            print(f"GPU-accelerated sampling enabled on device: {device}")
     else:
         data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start)
 
@@ -112,7 +116,13 @@ def train(model, args, device):
 
     num_training_examples = args.training.num_training_examples
 
+    # Profiling timers
+    timings = defaultdict(list)
+    profile_every = 100  # Profile every N steps
+
     for i in pbar:
+        step_start = time.time()
+
         data_sampler_args = {}
         task_sampler_args = {}
 
@@ -131,7 +141,7 @@ def train(model, args, device):
                 num_runs = getattr(data_sampler, 'num_runs', 3)
                 data_sampler = get_data_sampler("ar_mixture", n_dims=n_dims, lag=current_lag,
                                                noise_std=noise_std, num_mixture_models=num_mixture_models,
-                                               num_runs=num_runs)
+                                               num_runs=num_runs, use_gpu=True, device=device)
             task_sampler_args["lag"] = current_lag
             task_sampler_args["num_runs"] = getattr(data_sampler, 'num_runs', 3)
 
@@ -147,32 +157,52 @@ def train(model, args, device):
         if args.training.task == "ar_warmup":
             if data_sampler.current_coefficients is None or not hasattr(data_sampler, 'current_coefficients'):
                 data_sampler.current_coefficients = data_sampler.generate_bounded_coefficients(bsize)
-        
+
+        # TIME: Data sampling
+        t0 = time.time()
         xs = data_sampler.sample_xs(
             curriculum.n_points,
             bsize,
             n_dims,
             **data_sampler_args,
         )
+        timings['data_sampling'].append(time.time() - t0)
 
+        # TIME: Task setup
+        t0 = time.time()
         # Ability to feed in coefficients
         if args.training.task in ["ar_warmup", "ar_mixture"] and hasattr(data_sampler, 'current_coefficients') and data_sampler.current_coefficients is not None:
             task_sampler_args["coefficients"] = data_sampler.current_coefficients
-        
+
         task = task_sampler(**task_sampler_args)
-        
+
         if args.training.task in ["ar_warmup", "ar_mixture"] and hasattr(data_sampler, 'current_ys'):
             ys = data_sampler.current_ys
         else:
             ys = task.evaluate(xs)
 
         loss_func = task.get_training_metric()
+        timings['task_setup'].append(time.time() - t0)
 
-        loss, output = train_step(model, xs.to(device), ys.to(device), optimizer, loss_func)
+        # TIME: Data transfer to GPU
+        t0 = time.time()
+        xs_gpu = xs.to(device)
+        ys_gpu = ys.to(device)
+        timings['data_transfer'].append(time.time() - t0)
 
+        # TIME: Training step (forward + backward + optimizer)
+        t0 = time.time()
+        loss, output = train_step(model, xs_gpu, ys_gpu, optimizer, loss_func)
+        # Synchronize GPU to get accurate timing
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+        timings['train_step'].append(time.time() - t0)
+
+        # TIME: Post-processing (metrics, logging prep)
+        t0 = time.time()
         point_wise_tags = list(range(curriculum.n_points))
         point_wise_loss_func = task.get_metric()
-        point_wise_loss = point_wise_loss_func(output, ys.to(device)).mean(dim=0)
+        point_wise_loss = point_wise_loss_func(output, ys_gpu).mean(dim=0)
 
         baseline_loss = (
             sum(
@@ -181,6 +211,30 @@ def train(model, args, device):
             )
             / curriculum.n_points
         )
+        timings['post_processing'].append(time.time() - t0)
+
+        # Record total step time
+        timings['total_step'].append(time.time() - step_start)
+
+        # Print profiling summary periodically
+        if i > 0 and i % profile_every == 0:
+            print("\n" + "="*70)
+            print(f"PROFILING SUMMARY (last {profile_every} steps):")
+            print("="*70)
+
+            # Calculate averages for last profile_every steps
+            recent_start = max(0, len(timings['total_step']) - profile_every)
+
+            for key in ['data_sampling', 'task_setup', 'data_transfer', 'train_step', 'post_processing', 'total_step']:
+                if key in timings and len(timings[key]) > 0:
+                    recent_times = timings[key][recent_start:]
+                    avg_time = sum(recent_times) / len(recent_times) * 1000  # Convert to ms
+                    pct = (sum(recent_times) / sum(timings['total_step'][recent_start:])) * 100 if key != 'total_step' else 100
+                    print(f"  {key:20s}: {avg_time:7.2f} ms  ({pct:5.1f}%)")
+
+            print("="*70)
+            print(f"  Throughput: {1000 / (sum(timings['total_step'][recent_start:]) / len(timings['total_step'][recent_start:])):.2f} it/s")
+            print("="*70 + "\n")
 
         if i % args.wandb.log_every_steps == 0 and not args.test_run:
             wandb.log(
@@ -215,6 +269,24 @@ def train(model, args, device):
             and i > 0
         ):
             torch.save(model.state_dict(), os.path.join(args.out_dir, f"model_{i}.pt"))
+
+    # Print final profiling summary
+    print("\n" + "="*70)
+    print("FINAL PROFILING SUMMARY (entire training run):")
+    print("="*70)
+
+    for key in ['data_sampling', 'task_setup', 'data_transfer', 'train_step', 'post_processing', 'total_step']:
+        if key in timings and len(timings[key]) > 0:
+            avg_time = sum(timings[key]) / len(timings[key]) * 1000  # Convert to ms
+            total_time = sum(timings[key])
+            pct = (total_time / sum(timings['total_step'])) * 100 if key != 'total_step' else 100
+            print(f"  {key:20s}: {avg_time:7.2f} ms/step  ({pct:5.1f}%)  [total: {total_time:.1f}s]")
+
+    total_time = sum(timings['total_step'])
+    print("="*70)
+    print(f"  Total training time: {total_time:.1f}s ({total_time/60:.1f} min)")
+    print(f"  Average throughput: {len(timings['total_step']) / total_time:.2f} it/s")
+    print("="*70 + "\n")
 
 
 def deep_merge(dict1, dict2):
