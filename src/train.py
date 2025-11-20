@@ -42,6 +42,7 @@ def train(model, args, device):
 
     starting_step = 0
     state_path = os.path.join(args.out_dir, "state.pt")
+    state_path = os.path.join(args.out_dir, "state.pt")
     if os.path.exists(state_path):
         state = torch.load(state_path)
         model.load_state_dict(state["model_state_dict"])
@@ -76,19 +77,29 @@ def train(model, args, device):
         assert isinstance(lag_value, int), "lag must be an integer"
         noise_std = task_kwargs.get('noise_std', 0.2)
         num_mixture_models = task_kwargs.get('num_mixture_models', 5)
-        data_sampler = get_data_sampler("ar_mixture", n_dims=n_dims, lag=lag_value, 
-                                       noise_std=noise_std, num_mixture_models=num_mixture_models)
-        
+        num_runs = task_kwargs.get('num_runs', 3)
+
+        # Validate that n_dims matches expected format (2*num_runs - 1)
+        expected_n_dims = 2 * num_runs - 1
+        if n_dims != expected_n_dims:
+            print(f"Warning: model.n_dims={n_dims} but expected {expected_n_dims} for num_runs={num_runs}")
+            print(f"Using model.n_dims={n_dims} anyway, but this may cause issues.")
+
+        data_sampler = get_data_sampler("ar_mixture", n_dims=n_dims, lag=lag_value,
+                                       noise_std=noise_std, num_mixture_models=num_mixture_models,
+                                       num_runs=num_runs)
+
         # Save the coefficients so they can be used during testing
         if not args.test_run:
             coeff_pool_path = os.path.join(args.out_dir, "coefficient_pool.pt")
             torch.save(data_sampler.coefficient_pool, coeff_pool_path)
             print(f"Saved coefficient pool to {coeff_pool_path}")
+            print(f"Training with {num_runs} runs per sample, {num_mixture_models} models in pool")
     else:
         data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start)
 
-    filtered_task_kwargs = {k: v for k, v in task_kwargs.items() 
-                           if k not in ['num_mixture_models', 'noise_std']}
+    filtered_task_kwargs = {k: v for k, v in task_kwargs.items()
+                           if k not in ['num_mixture_models', 'noise_std', 'num_runs']}
     
     task_sampler = get_task_sampler(
         args.training.task,
@@ -117,9 +128,12 @@ def train(model, args, device):
             if current_lag != getattr(data_sampler, 'lag', None):
                 noise_std = getattr(data_sampler, 'noise_std', 0.2)
                 num_mixture_models = getattr(data_sampler, 'num_mixture_models', 5)
-                data_sampler = get_data_sampler("ar_mixture", n_dims=n_dims, lag=current_lag, 
-                                               noise_std=noise_std, num_mixture_models=num_mixture_models)
+                num_runs = getattr(data_sampler, 'num_runs', 3)
+                data_sampler = get_data_sampler("ar_mixture", n_dims=n_dims, lag=current_lag,
+                                               noise_std=noise_std, num_mixture_models=num_mixture_models,
+                                               num_runs=num_runs)
             task_sampler_args["lag"] = current_lag
+            task_sampler_args["num_runs"] = getattr(data_sampler, 'num_runs', 3)
 
         if "sparse" in args.training.task:
             task_sampler_args["valid_coords"] = curriculum.n_dims_truncated

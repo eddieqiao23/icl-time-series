@@ -147,17 +147,101 @@ class ARMixtureSampler(ARWarmupSampler):
     """
     Mixture of AR(q) models. Fix a coefficient pool throughout training, so we are sampling
     coefficients from it during both training and testing.
+
+    Generates multi-run samples where each sample contains multiple AR sequences,
+    each generated from a randomly selected model from the coefficient pool.
     """
-    def __init__(self, n_dims, lag=3, base_sampler=None, noise_std=0.2, num_mixture_models=5, **kwargs):
+    def __init__(self, n_dims, lag=3, base_sampler=None, noise_std=0.2, num_mixture_models=5, num_runs=3, **kwargs):
         super().__init__(n_dims, lag, base_sampler, noise_std, **kwargs)
         self.num_mixture_models = num_mixture_models
+        self.num_runs = num_runs
         self.coefficient_pool = self.generate_bounded_coefficients(num_mixture_models)
-    
+
+    def _generate_single_run(self, run_length, coefficients, seed=None):
+        """
+        Generate a single AR sequence.
+
+        Args:
+            run_length: Number of time points to generate
+            coefficients: (lag,) tensor of AR coefficients
+            seed: Optional random seed
+
+        Returns:
+            sequence: (run_length + 1,) tensor where sequence[i] is the value to predict sequence[i+1]
+        """
+        T = run_length + 1 + self.lag  # Need extra points for initialization and next value
+        z = torch.zeros(T)
+
+        if seed is not None:
+            generator = torch.Generator()
+            generator.manual_seed(seed)
+            z[:self.lag] = torch.randn(self.lag, generator=generator)
+
+            for t in range(self.lag, T):
+                z[t] = sum(coefficients[j] * z[t-1-j] for j in range(self.lag))
+                z[t] += torch.randn(1, generator=generator).item() * self.noise_std
+        else:
+            z[:self.lag] = torch.randn(self.lag)
+
+            for t in range(self.lag, T):
+                z[t] = sum(coefficients[j] * z[t-1-j] for j in range(self.lag))
+                z[t] += torch.randn(1).item() * self.noise_std
+
+        # Return sequence starting from the first predictable point
+        return z[self.lag:self.lag + run_length + 1]
+
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
-        coeff_indices = torch.randint(0, self.num_mixture_models, (b_size,))
-        self.current_coefficients = self.coefficient_pool[coeff_indices]
-        self.current_coefficient_ids = coeff_indices
-        return super().sample_xs(n_points, b_size, n_dims_truncated, seeds)
+        """
+        Generate multi-run AR mixture samples.
+
+        Args:
+            n_points: Length of each run (run_length)
+            b_size: Batch size
+            n_dims_truncated: Should be 2*num_runs - 1
+            seeds: Random seeds for reproducibility
+
+        Returns:
+            xs: (b_size, n_points, 2*num_runs - 1) tensor in progressive format
+                Each row: [run1_val, run1_out, run2_val, run2_out, ..., runN_val]
+        """
+        run_length = n_points
+        expected_dims = 2 * self.num_runs - 1
+
+        if n_dims_truncated is not None and n_dims_truncated != expected_dims:
+            print(f"Warning: n_dims_truncated={n_dims_truncated} but expected {expected_dims} for {self.num_runs} runs")
+
+        xs_b = torch.zeros(b_size, run_length, expected_dims)
+        ys_b = torch.zeros(b_size, run_length)
+
+        for batch_idx in range(b_size):
+            # Generate num_runs sequences, each from a random model in the pool
+            for run_idx in range(self.num_runs):
+                # Randomly sample coefficients from pool
+                coeff_idx = torch.randint(0, self.num_mixture_models, (1,)).item()
+                coefficients = self.coefficient_pool[coeff_idx]
+
+                # Generate AR sequence for this run
+                seed = seeds[batch_idx] + run_idx if seeds is not None else None
+                sequence = self._generate_single_run(run_length, coefficients, seed)
+
+                # Fill in the matrix columns
+                # Format: [run1_val, run1_out, run2_val, run2_out, ..., runN_val]
+                if run_idx < self.num_runs - 1:
+                    # For runs 1 to N-1: both val and out columns
+                    val_col = 2 * run_idx
+                    out_col = 2 * run_idx + 1
+                    xs_b[batch_idx, :, val_col] = sequence[:run_length]  # z0, z1, z2, ...
+                    xs_b[batch_idx, :, out_col] = sequence[1:run_length+1]  # z1, z2, z3, ...
+                else:
+                    # For final run: only val column
+                    val_col = 2 * run_idx
+                    xs_b[batch_idx, :, val_col] = sequence[:run_length]  # v0, v1, v2, ...
+                    ys_b[batch_idx, :] = sequence[1:run_length+1]  # v1, v2, v3, ... (targets)
+
+        # Store ys_b for use in train.py
+        self.current_ys = ys_b
+
+        return xs_b
 
 
 def get_data_sampler(data_name, n_dims, **kwargs):
