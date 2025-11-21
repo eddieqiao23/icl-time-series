@@ -69,7 +69,7 @@ class ARWarmupSampler(DataSampler):
                 # Finish the remaining N-q values for AR(q) process
                 # Might be slow to parallelize?
                 for t in range(self.lag, T):
-                    # x_t = (1/d) * sum(x_{t-i} * a_i) + ε_t, where ε_t ~ N(0, noise_std^2)
+                    # x_t = (1/d) * sum(x_{t-i} * a_i) + ε_t, where eps_t ~ N(0, noise_std^2)
                     z[t] = sum(self.current_coefficients[i, j] * z[t-1-j] for j in range(self.lag))
                     z[t] += torch.randn(1, generator=generator).item() * self.noise_std
                 
@@ -155,7 +155,7 @@ class ARMixtureSampler(ARWarmupSampler):
         super().__init__(n_dims, lag, base_sampler, noise_std, **kwargs)
         self.num_mixture_models = num_mixture_models
         self.num_runs = num_runs
-        self.use_gpu = use_gpu
+        self.use_gpu = use_gpu # Generate everything at the start more quickly
         self.device = device if device is not None else (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
         self.coefficient_pool = self.generate_bounded_coefficients(num_mixture_models)
 
@@ -198,7 +198,8 @@ class ARMixtureSampler(ARWarmupSampler):
 
     def _sample_xs_gpu(self, n_points, b_size, n_dims_truncated=None, seeds=None):
         """
-        GPU-parallelized AR mixture sampling - generates all sequences in parallel.
+        GPU-parallelized AR mixture sampling. Within a batch, every sequence is generated
+        in parallel.
 
         Args:
             n_points: Length of each run (run_length)
@@ -212,26 +213,25 @@ class ARMixtureSampler(ARWarmupSampler):
         run_length = n_points
         expected_dims = 2 * self.num_runs - 1
 
-        if n_dims_truncated is not None and n_dims_truncated != expected_dims:
-            print(f"Warning: n_dims_truncated={n_dims_truncated} but expected {expected_dims} for {self.num_runs} runs")
+        # n of the inputs, n-1 of the "answers"
+        assert n_dims_truncated is not None and n_dims_truncated == expected_dims
 
-        # Total number of sequences to generate in parallel
         total_sequences = b_size * self.num_runs
 
-        # Sample coefficient indices for all sequences at once
         if seeds is not None:
-            # Use seeds to deterministically sample coefficients
-            torch.manual_seed(seeds[0])  # Use first seed for coefficient sampling
-        coeff_indices = torch.randint(0, self.num_mixture_models, (total_sequences,), device=self.device)
-        all_coefficients = self.coefficient_pool[coeff_indices]  # (total_sequences, lag)
+            torch.manual_seed(seeds[0])
 
-        # Generate all AR sequences in parallel
+        # Generate a NEW coefficient pool for this batch (different 5 models each step)
+        batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag, device=self.device) / self.lag
+
+        # Choose the coeffs for each sequence within the batch (640)
+        coeff_indices = torch.randint(0, self.num_mixture_models, (total_sequences,), device=self.device)
+        all_coefficients = batch_coefficient_pool[coeff_indices]
+
         T = run_length + 1 + self.lag
         z_batch = torch.zeros(total_sequences, T, device=self.device)
 
-        # Initialize first lag values
         if seeds is not None:
-            # For deterministic generation with seeds
             for i in range(total_sequences):
                 batch_idx = i // self.num_runs
                 run_idx = i % self.num_runs
@@ -241,30 +241,23 @@ class ARMixtureSampler(ARWarmupSampler):
         else:
             z_batch[:, :self.lag] = torch.randn(total_sequences, self.lag, device=self.device)
 
-        # Generate noise for all timesteps
         if seeds is not None:
             noise_batch = torch.zeros(total_sequences, T - self.lag, device=self.device)
             for i in range(total_sequences):
                 batch_idx = i // self.num_runs
                 run_idx = i % self.num_runs
                 generator = torch.Generator(device=self.device)
-                generator.manual_seed(int(seeds[batch_idx]) + run_idx + 1000)  # Offset for noise
+                generator.manual_seed(int(seeds[batch_idx]) + run_idx + 1000)
                 noise_batch[i] = torch.randn(T - self.lag, generator=generator, device=self.device) * self.noise_std
         else:
             noise_batch = torch.randn(total_sequences, T - self.lag, device=self.device) * self.noise_std
 
-        # Vectorized AR generation across batch dimension
-        # Still sequential in time (unavoidable for AR), but parallel across all sequences
         for t in range(self.lag, T):
-            # For each sequence, compute weighted sum of previous lag values
-            # z[t] = sum(coeff[j] * z[t-1-j] for j in range(lag)) + noise
-            lagged_vals = torch.stack([z_batch[:, t-1-j] for j in range(self.lag)], dim=1)  # (total_sequences, lag)
+            lagged_vals = torch.stack([z_batch[:, t-1-j] for j in range(self.lag)], dim=1)
             z_batch[:, t] = (all_coefficients * lagged_vals).sum(dim=1) + noise_batch[:, t - self.lag]
 
-        # Extract the relevant part of sequences
-        sequences = z_batch[:, self.lag:self.lag + run_length + 1]  # (total_sequences, run_length + 1)
+        sequences = z_batch[:, self.lag:self.lag + run_length + 1]
 
-        # Reshape and format output
         xs_b = torch.zeros(b_size, run_length, expected_dims, device=self.device)
         ys_b = torch.zeros(b_size, run_length, device=self.device)
 
@@ -273,25 +266,19 @@ class ARMixtureSampler(ARWarmupSampler):
                 seq_idx = batch_idx * self.num_runs + run_idx
                 sequence = sequences[seq_idx]
 
-                # Fill in the matrix columns
-                # Format: [run1_val, run1_out, run2_val, run2_out, ..., runN_val]
                 if run_idx < self.num_runs - 1:
-                    # For runs 1 to N-1: both val and out columns
                     val_col = 2 * run_idx
                     out_col = 2 * run_idx + 1
                     xs_b[batch_idx, :, val_col] = sequence[:run_length]
                     xs_b[batch_idx, :, out_col] = sequence[1:run_length+1]
                 else:
-                    # For final run: only val column
                     val_col = 2 * run_idx
                     xs_b[batch_idx, :, val_col] = sequence[:run_length]
                     ys_b[batch_idx, :] = sequence[1:run_length+1]
 
-        # Move back to CPU for compatibility with training loop
         xs_b = xs_b.cpu()
         ys_b = ys_b.cpu()
 
-        # Store ys_b for use in train.py
         self.current_ys = ys_b
 
         return xs_b
