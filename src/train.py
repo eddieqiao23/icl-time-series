@@ -56,7 +56,9 @@ def train(model, args, device):
     n_dims = model.n_dims
     print("n_dims: ", n_dims)
     bsize = args.training.batch_size
-            
+
+    sampler_n_dims_override = None
+
     # Convert Args object to dict for task_kwargs
     task_kwargs = {}
     if hasattr(args.training, 'task_kwargs') and args.training.task_kwargs:
@@ -64,7 +66,7 @@ def train(model, args, device):
             task_kwargs = args.training.task_kwargs.__dict__
         else:
             task_kwargs = args.training.task_kwargs
-    
+
     print("task_kwargs: ", task_kwargs)
     
     if args.training.task == "ar_warmup":
@@ -108,6 +110,7 @@ def train(model, args, device):
         num_runs = task_kwargs.get('num_runs', 3)
 
         sampler_n_dims = 2 * num_runs - 1
+        sampler_n_dims_override = sampler_n_dims
 
         data_sampler = get_data_sampler("ar_mixture_transposed", n_dims=sampler_n_dims, lag=lag_value,
                                        noise_std=noise_std, num_mixture_models=num_mixture_models,
@@ -177,10 +180,11 @@ def train(model, args, device):
 
         # TIME: Data sampling
         t0 = time.time()
+        sample_n_dims = sampler_n_dims_override if sampler_n_dims_override is not None else n_dims
         xs = data_sampler.sample_xs(
             curriculum.n_points,
             bsize,
-            n_dims,
+            sample_n_dims,
             **data_sampler_args,
         )
         timings['data_sampling'].append(time.time() - t0)
