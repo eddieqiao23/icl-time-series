@@ -107,16 +107,14 @@ def train(model, args, device):
         num_mixture_models = task_kwargs.get('num_mixture_models', 5)
         num_runs = task_kwargs.get('num_runs', 3)
 
-        expected_n_dims = 2 * num_runs - 1
-        if n_dims != expected_n_dims:
-            print(f"Warning: model.n_dims={n_dims} but expected {expected_n_dims} for num_runs={num_runs}")
-            print(f"Using model.n_dims={n_dims} anyway, but this may cause issues.")
+        sampler_n_dims = 2 * num_runs - 1
 
-        data_sampler = get_data_sampler("ar_mixture_transposed", n_dims=n_dims, lag=lag_value,
+        data_sampler = get_data_sampler("ar_mixture_transposed", n_dims=sampler_n_dims, lag=lag_value,
                                        noise_std=noise_std, num_mixture_models=num_mixture_models,
                                        num_runs=num_runs, use_gpu=True, device=device)
 
         print(f"Training with transposed format: {num_runs} runs per sample, {num_mixture_models} models in pool")
+        print(f"Model n_dims (token dim): {n_dims}, Sampler n_dims (num tokens): {sampler_n_dims}")
         print(f"GPU-accelerated sampling enabled on device: {device}")
     else:
         data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start)
