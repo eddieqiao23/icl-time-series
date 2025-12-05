@@ -2,15 +2,15 @@ inherit:
     - models/small.yaml
 
 model:
-    n_dims: 20  # Sequence length (dimensionality of each token)
-    n_positions: 39  # Number of tokens (2*num_runs - 1)
+    n_dims: 20  # m (length of each run, dimension of token)
+    n_positions: 39  # 2n - 1 (number of tokens)
 
 training:
     task: ar_mixture_transposed
     data: ar_mixture_transposed
     task_kwargs:
-        num_mixture_models: 5  # Size of coefficient pool
-        num_runs: 20  # Number of runs per sample
+        num_mixture_models: 5  # p (size of pool)
+        num_runs: 20  # n (number of runs per sample)
         noise_std: 0.2
     batch_size: 64
     learning_rate: 0.0001
@@ -19,18 +19,18 @@ training:
     train_steps: 20001
     curriculum:
         dims:
-            start: 39  # Number of tokens (2*num_runs - 1)
+            start: 39  # 2n - 1 (number of tokens)
             end: 39
             inc: 1
             interval: 2000
         points:
-            start: 20  # Length of each sequence (becomes token dimension)
+            start: 20 # m (length of each run)
             end: 20
             inc: 2
             interval: 2000
         lag:
-            start: 10  # AR(10) process
-            end: 10
+            start: 15  # lag
+            end: 15
             inc: 1
             interval: 1000
 

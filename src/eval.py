@@ -21,6 +21,9 @@ def get_model_from_run(run_path, step=-1, only_conf=False):
     if only_conf:
         return None, conf
 
+    if hasattr(conf.training, 'task') and conf.training.task == "ar_mixture_transposed":
+        conf.model.predict_vector = True
+
     model = models.build_model(conf.model)
 
     if step == -1:
