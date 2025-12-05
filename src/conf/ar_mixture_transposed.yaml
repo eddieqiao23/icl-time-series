@@ -2,15 +2,15 @@ inherit:
     - models/small.yaml
 
 model:
-    n_dims: 39  # 2*num_runs - 1 = 2*10 - 1 = 19
-    n_positions: 101
+    n_dims: 20  # Sequence length (dimensionality of each token)
+    n_positions: 39  # Number of tokens (2*num_runs - 1)
 
 training:
-    task: ar_mixture
-    data: ar_mixture
+    task: ar_mixture_transposed
+    data: ar_mixture_transposed
     task_kwargs:
         num_mixture_models: 5  # Size of coefficient pool
-        num_runs: 20  # Number of runs per sample (9 context + 1 prediction)
+        num_runs: 20  # Number of runs per sample
         noise_std: 0.2
     batch_size: 64
     learning_rate: 0.0001
@@ -19,27 +19,26 @@ training:
     train_steps: 20001
     curriculum:
         dims:
-            start: 39
+            start: 39  # Number of tokens (2*num_runs - 1)
             end: 39
             inc: 1
             interval: 2000
         points:
-            start: 20  # Length of each run
+            start: 20  # Length of each sequence (becomes token dimension)
             end: 20
             inc: 2
             interval: 2000
         lag:
-            start: 10  # AR(3) process
+            start: 10  # AR(10) process
             end: 10
             inc: 1
             interval: 1000
 
-out_dir: ../models/ar_mixture_multirun
-
+out_dir: ../models/ar_mixture_transposed
 wandb:
-    project: ar_mixture_multirun
+    project: ar_mixture_transposed
     entity: null
-    notes: "Multi-run AR mixture with progressive format - 10 runs, 3 models in pool"
+    notes: "Transposed AR mixture where columns are tokens - vector prediction"
     log_every_steps: 100
 
 test_run: False

@@ -13,12 +13,14 @@ from base_models import NeuralNetwork, ParallelNetworks
 
 def build_model(conf):
     if conf.family == "gpt2":
+        predict_vector = getattr(conf, 'predict_vector', False)
         model = TransformerModel(
             n_dims=conf.n_dims,
             n_positions=conf.n_positions,
             n_embd=conf.n_embd,
             n_layer=conf.n_layer,
             n_head=conf.n_head,
+            predict_vector=predict_vector,
         )
     else:
         raise NotImplementedError
@@ -78,7 +80,7 @@ def get_relevant_baselines(task_name):
 
 
 class TransformerModel(nn.Module):
-    def __init__(self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4):
+    def __init__(self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4, predict_vector=False):
         super(TransformerModel, self).__init__()
         configuration = GPT2Config(
             n_positions=2 * n_positions,
@@ -94,21 +96,27 @@ class TransformerModel(nn.Module):
 
         self.n_positions = n_positions
         self.n_dims = n_dims
+        self.predict_vector = predict_vector
         self._read_in = nn.Linear(n_dims, n_embd)
         self._backbone = GPT2Model(configuration)
-        self._read_out = nn.Linear(n_embd, 1)
+        if predict_vector:
+            self._read_out = nn.Linear(n_embd, n_dims)
+        else:
+            self._read_out = nn.Linear(n_embd, 1)
 
-    @staticmethod
-    def _combine(xs_b, ys_b):
+    def _combine(self, xs_b, ys_b):
         """Interleaves the x's and the y's into a single sequence."""
         bsize, points, dim = xs_b.shape
-        ys_b_wide = torch.cat(
-            (
-                ys_b.view(bsize, points, 1),
-                torch.zeros(bsize, points, dim - 1, device=ys_b.device),
-            ),
-            axis=2,
-        )
+        if not self.predict_vector:
+            ys_b_wide = torch.cat(
+                (
+                    ys_b.view(bsize, points, 1),
+                    torch.zeros(bsize, points, dim - 1, device=ys_b.device),
+                ),
+                axis=2,
+            )
+        else:
+            ys_b_wide = ys_b
         zs = torch.stack((xs_b, ys_b_wide), dim=2)
         zs = zs.view(bsize, 2 * points, dim)
         return zs
@@ -124,7 +132,10 @@ class TransformerModel(nn.Module):
         embeds = self._read_in(zs)
         output = self._backbone(inputs_embeds=embeds).last_hidden_state
         prediction = self._read_out(output)
-        return prediction[:, ::2, 0][:, inds]  # predict only on xs
+        if not self.predict_vector:
+            return prediction[:, ::2, 0][:, inds]
+        else:
+            return prediction[:, ::2, :][:, inds, :]
 
 
 class NNModel:

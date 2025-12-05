@@ -221,12 +221,13 @@ class ARMixtureSampler(ARWarmupSampler):
         if seeds is not None:
             torch.manual_seed(seeds[0])
 
-        # Generate a NEW coefficient pool for this batch (different 5 models each step)
         batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag, device=self.device) / self.lag
 
-        # Choose the coeffs for each sequence within the batch (640)
         coeff_indices = torch.randint(0, self.num_mixture_models, (total_sequences,), device=self.device)
         all_coefficients = batch_coefficient_pool[coeff_indices]
+
+        self.current_coefficient_pool = batch_coefficient_pool.cpu()
+        self.current_coefficient_ids = coeff_indices.cpu()
 
         T = run_length + 1 + self.lag
         z_batch = torch.zeros(total_sequences, T, device=self.device)
@@ -301,22 +302,24 @@ class ARMixtureSampler(ARWarmupSampler):
         if self.use_gpu and self.device.type in ['cuda', 'mps']:
             return self._sample_xs_gpu(n_points, b_size, n_dims_truncated, seeds)
 
-        # Fall back to CPU version
         run_length = n_points
         expected_dims = 2 * self.num_runs - 1
 
         if n_dims_truncated is not None and n_dims_truncated != expected_dims:
             print(f"Warning: n_dims_truncated={n_dims_truncated} but expected {expected_dims} for {self.num_runs} runs")
 
+        batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag) / self.lag
+        self.current_coefficient_pool = batch_coefficient_pool
+
         xs_b = torch.zeros(b_size, run_length, expected_dims)
         ys_b = torch.zeros(b_size, run_length)
+        coeff_indices = []
 
         for batch_idx in range(b_size):
-            # Generate num_runs sequences, each from a random model in the pool
             for run_idx in range(self.num_runs):
-                # Randomly sample coefficients from pool
                 coeff_idx = torch.randint(0, self.num_mixture_models, (1,)).item()
-                coefficients = self.coefficient_pool[coeff_idx]
+                coeff_indices.append(coeff_idx)
+                coefficients = batch_coefficient_pool[coeff_idx]
 
                 # Generate AR sequence for this run
                 seed = seeds[batch_idx] + run_idx if seeds is not None else None
@@ -336,10 +339,37 @@ class ARMixtureSampler(ARWarmupSampler):
                     xs_b[batch_idx, :, val_col] = sequence[:run_length]  # v0, v1, v2, ...
                     ys_b[batch_idx, :] = sequence[1:run_length+1]  # v1, v2, v3, ... (targets)
 
-        # Store ys_b for use in train.py
         self.current_ys = ys_b
+        self.current_coefficient_ids = torch.tensor(coeff_indices)
 
         return xs_b
+
+
+class ARMixtureTransposedSampler(ARMixtureSampler):
+    """
+    Transposed version where columns become tokens.
+    Token 0: [z₁,₀, z₁,₁, ..., z₁,₁₉]
+    Token 1: [z₁,₁, z₁,₂, ..., z₁,₂₀]
+    ...
+    Returns xs: (batch, 2*num_runs-1, n_points)
+    """
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        xs_original = super().sample_xs(n_points, b_size, n_dims_truncated, seeds)
+        xs_transposed = xs_original.transpose(1, 2)
+
+        ys_vectors = torch.zeros(b_size, 2 * self.num_runs - 1, n_points)
+
+        for run_idx in range(self.num_runs - 1):
+            val_col = 2 * run_idx
+            out_col = 2 * run_idx + 1
+            ys_vectors[:, val_col, :] = xs_transposed[:, out_col, :]
+
+        final_val_col = 2 * (self.num_runs - 1)
+        ys_vectors[:, final_val_col, :] = self.current_ys
+
+        self.current_ys_vectors = ys_vectors
+
+        return xs_transposed
 
 
 def get_data_sampler(data_name, n_dims, **kwargs):
@@ -347,6 +377,7 @@ def get_data_sampler(data_name, n_dims, **kwargs):
         "gaussian": GaussianSampler,
         "ar_warmup": ARWarmupSampler,
         "ar_mixture": ARMixtureSampler,
+        "ar_mixture_transposed": ARMixtureTransposedSampler,
     }
     if data_name in names_to_classes:
         sampler_cls = names_to_classes[data_name]

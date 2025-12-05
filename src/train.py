@@ -99,6 +99,25 @@ def train(model, args, device):
             print(f"Saved coefficient pool to {coeff_pool_path}")
             print(f"Training with {num_runs} runs per sample, {num_mixture_models} models in pool")
             print(f"GPU-accelerated sampling enabled on device: {device}")
+    elif args.training.task == "ar_mixture_transposed":
+        lag_value = curriculum.lag
+        assert lag_value is not None, "lag must be provided"
+        assert isinstance(lag_value, int), "lag must be an integer"
+        noise_std = task_kwargs.get('noise_std', 0.2)
+        num_mixture_models = task_kwargs.get('num_mixture_models', 5)
+        num_runs = task_kwargs.get('num_runs', 3)
+
+        expected_n_dims = 2 * num_runs - 1
+        if n_dims != expected_n_dims:
+            print(f"Warning: model.n_dims={n_dims} but expected {expected_n_dims} for num_runs={num_runs}")
+            print(f"Using model.n_dims={n_dims} anyway, but this may cause issues.")
+
+        data_sampler = get_data_sampler("ar_mixture_transposed", n_dims=n_dims, lag=lag_value,
+                                       noise_std=noise_std, num_mixture_models=num_mixture_models,
+                                       num_runs=num_runs, use_gpu=True, device=device)
+
+        print(f"Training with transposed format: {num_runs} runs per sample, {num_mixture_models} models in pool")
+        print(f"GPU-accelerated sampling enabled on device: {device}")
     else:
         data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start)
 
@@ -178,6 +197,8 @@ def train(model, args, device):
 
         if args.training.task in ["ar_warmup", "ar_mixture"] and hasattr(data_sampler, 'current_ys'):
             ys = data_sampler.current_ys
+        elif args.training.task == "ar_mixture_transposed" and hasattr(data_sampler, 'current_ys_vectors'):
+            ys = data_sampler.current_ys_vectors
         else:
             ys = task.evaluate(xs)
 
@@ -373,6 +394,9 @@ def main(args):
             print(f"Warning: Could not initialize wandb: {e}")
             print("Continuing without wandb logging...")
             args.test_run = True
+
+    if args.training.task == "ar_mixture_transposed":
+        args.model.predict_vector = True
 
     model = build_model(args.model)
     print(args)

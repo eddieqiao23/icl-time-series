@@ -11,6 +11,40 @@ def mean_squared_error(ys_pred, ys):
     return (ys - ys_pred).square().mean()
 
 
+def squared_error_masked_even(ys_pred, ys):
+    """Squared error only at even positions (0, 2, 4, ...). Used for transposed AR mixture.
+    Handles both 2D (batch, n_positions) and 3D (batch, n_positions, n_dims) tensors.
+    """
+    if ys_pred.dim() == 2:
+        mask = torch.arange(ys_pred.shape[-1], device=ys_pred.device) % 2 == 0
+        errors = (ys - ys_pred).square()
+        return errors * mask
+    else:
+        mask = torch.arange(ys_pred.shape[1], device=ys_pred.device) % 2 == 0
+        mask = mask.view(1, -1, 1)
+        errors = (ys - ys_pred).square()
+        return errors * mask
+
+
+def mean_squared_error_masked_even(ys_pred, ys):
+    """Mean squared error only at even positions. Used for transposed AR mixture.
+    Handles both 2D (batch, n_positions) and 3D (batch, n_positions, n_dims) tensors.
+    """
+    if ys_pred.dim() == 2:
+        mask = torch.arange(ys_pred.shape[-1], device=ys_pred.device) % 2 == 0
+        errors = (ys - ys_pred).square()
+        masked_errors = errors * mask
+        return masked_errors.sum() / mask.sum()
+    else:
+        mask = torch.arange(ys_pred.shape[1], device=ys_pred.device) % 2 == 0
+        mask = mask.view(1, -1, 1)
+        errors = (ys - ys_pred).square()
+        masked_errors = errors * mask
+        num_masked_positions = mask.sum()
+        num_dims = ys.shape[-1]
+        return masked_errors.sum() / (num_masked_positions * num_dims)
+
+
 def accuracy(ys_pred, ys):
     return (ys == ys_pred.sign()).float()
 
@@ -62,6 +96,7 @@ def get_task_sampler(
         "decision_tree": DecisionTree,
         "ar_warmup": ARWarmup,
         "ar_mixture": ARMixture,
+        "ar_mixture_transposed": ARMixtureTransposed,
     }
     if task_name in task_names_to_classes:
         task_cls = task_names_to_classes[task_name]
@@ -186,6 +221,24 @@ class ARMixture(Task):
     @staticmethod
     def get_training_metric():
         return mean_squared_error
+
+
+class ARMixtureTransposed(ARMixture):
+    """
+    Transposed AR mixture where columns are tokens.
+    Tokens: [seq1_in, seq1_out, seq2_in, seq2_out, ..., seqN_in]
+    Loss only computed at even positions (outputs).
+    """
+    def evaluate(self, xs_b: torch.Tensor) -> torch.Tensor:
+        return torch.zeros(xs_b.shape[0], xs_b.shape[1], device=xs_b.device)
+
+    @staticmethod
+    def get_metric():
+        return squared_error_masked_even
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error_masked_even
 
 
 class SparseLinearRegression(LinearRegression):
