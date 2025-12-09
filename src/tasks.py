@@ -45,6 +45,22 @@ def mean_squared_error_masked_even(ys_pred, ys):
         return masked_errors.sum() / (num_masked_positions * num_dims)
 
 
+def mean_squared_error_masked_even_last_dim(ys_pred, ys):
+    """Mean squared error only at even positions and only the last dimension.
+    This matches the evaluation metric in eval.ipynb.
+    ys_pred, ys shape: (batch, n_positions, n_dims)
+    """
+    # Mask for even positions (tokens 0, 2, 4, ...)
+    mask = torch.arange(ys_pred.shape[1], device=ys_pred.device) % 2 == 0
+
+    # Extract only even positions and last dimension
+    ys_pred_even_last = ys_pred[:, mask, -1]  # (batch, n_even_positions)
+    ys_even_last = ys[:, mask, -1]  # (batch, n_even_positions)
+
+    # Compute MSE
+    return ((ys_pred_even_last - ys_even_last) ** 2).mean()
+
+
 def accuracy(ys_pred, ys):
     return (ys == ys_pred.sign()).float()
 
@@ -238,7 +254,7 @@ class ARMixtureTransposed(ARMixture):
 
     @staticmethod
     def get_training_metric():
-        return mean_squared_error_masked_even
+        return mean_squared_error_masked_even_last_dim
 
 
 class SparseLinearRegression(LinearRegression):
