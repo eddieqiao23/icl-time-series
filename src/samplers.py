@@ -32,12 +32,13 @@ class ARWarmupSampler(DataSampler):
         """
         Generate AR coefficients that prevent explosive growth.
         Ensures the AR process remains bounded/stationary.
-        
-        Uses normalization by lag: x_t = (1/d) * sum(x_{t-i} * a_i) where a_i ~ N(0, 1)
-        This is more natural and increases stability compared to scaling down variance.
+
+        Uses L2 normalization to fix the total energy of coefficients.
+        This provides better signal-to-noise ratio while maintaining stability.
         """
-        # Generate coefficients from N(0, 1) and normalize by 1/lag
-        coeffs = torch.randn(batch_size, self.lag) / self.lag
+        # Generate coefficients from N(0, 1) and normalize L2 norm to 0.5
+        coeffs = torch.randn(batch_size, self.lag)
+        coeffs = coeffs / coeffs.norm(dim=1, keepdim=True) * 0.5
         return coeffs
     
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
@@ -221,7 +222,9 @@ class ARMixtureSampler(ARWarmupSampler):
         if seeds is not None:
             torch.manual_seed(seeds[0])
 
-        batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag, device=self.device) / self.lag
+        # Generate coefficient pool with L2 normalization
+        batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag, device=self.device)
+        batch_coefficient_pool = batch_coefficient_pool / batch_coefficient_pool.norm(dim=1, keepdim=True) * 0.5
 
         coeff_indices = torch.randint(0, self.num_mixture_models, (total_sequences,), device=self.device)
         all_coefficients = batch_coefficient_pool[coeff_indices]
@@ -308,7 +311,9 @@ class ARMixtureSampler(ARWarmupSampler):
         if n_dims_truncated is not None and n_dims_truncated != expected_dims:
             print(f"Warning: n_dims_truncated={n_dims_truncated} but expected {expected_dims} for {self.num_runs} runs")
 
-        batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag) / self.lag
+        # Generate coefficient pool with L2 normalization
+        batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag)
+        batch_coefficient_pool = batch_coefficient_pool / batch_coefficient_pool.norm(dim=1, keepdim=True) * 0.5
         self.current_coefficient_pool = batch_coefficient_pool
 
         xs_b = torch.zeros(b_size, run_length, expected_dims)
@@ -348,9 +353,8 @@ class ARMixtureSampler(ARWarmupSampler):
 class ARMixtureTransposedSampler(ARMixtureSampler):
     """
     Transposed version where columns become tokens.
-    Token 0: [z₁,₀, z₁,₁, ..., z₁,₁₉]
-    Token 1: [z₁,₁, z₁,₂, ..., z₁,₂₀]
-    ...
+    Token 0: [z_(1,0), z_(1,1), ..., z_(1,19)]
+    Token 1: [z_(1,1), z_(1,2), ..., z_(1,20)]
     Returns xs: (batch, 2*num_runs-1, n_points)
     """
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
