@@ -1,0 +1,48 @@
+inherit:
+    - models/small.yaml
+
+model:
+    n_dims: 20  # m (length of each run, dimension of token)
+    n_positions: 39  # 2n - 1 (number of tokens)
+
+training:
+    task: ar_mixture_transposed
+    data: ar_mixture_transposed
+    task_kwargs:
+        num_mixture_models: 5  # p (size of pool)
+        num_runs: 20  # n (number of runs per sample)
+        noise_std: 0.2
+        # Coefficient generation: root-based uniform for maximum diversity
+        coefficient_method: root_based
+        coefficient_params:
+            radius_range: [0.0, 0.95]  # Uniform distribution for max diversity
+    batch_size: 64
+    learning_rate: 0.0001
+    save_every_steps: 1000
+    keep_every_steps: 100000
+    train_steps: 20001
+    curriculum:
+        dims:
+            start: 39  # 2n - 1 (number of tokens)
+            end: 39
+            inc: 1
+            interval: 2000
+        points:
+            start: 20 # m (length of each run)
+            end: 20
+            inc: 2
+            interval: 2000
+        lag:
+            start: 15  # AR lag
+            end: 15
+            inc: 1
+            interval: 1000
+
+out_dir: ../models/ar_mixture_transposed_root_uniform
+wandb:
+    project: ar_mixture_transposed_root_uniform
+    entity: null
+    notes: "Root-based uniform (0, 0.95) - maximum diversity for in-context learning"
+    log_every_steps: 100
+
+test_run: False

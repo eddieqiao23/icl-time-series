@@ -96,10 +96,36 @@ def train(model, args, device):
 
         # Save the coefficients so they can be used during testing
         if not args.test_run:
+            import numpy as np
             coeff_pool_path = os.path.join(args.out_dir, "coefficient_pool.pt")
             torch.save(data_sampler.coefficient_pool.cpu(), coeff_pool_path)  # Save CPU version
+            
+            # Save coefficient metadata
+            coeff_metadata = {
+                'method': coefficient_method,
+                'params': coefficient_params,
+                'lag': lag_value,
+                'num_models': num_mixture_models,
+                'noise_std': noise_std
+            }
+            
+            # Compute coefficient statistics
+            l2_norms = data_sampler.coefficient_pool.norm(dim=1).cpu().numpy()
+            coeff_metadata['l2_norm_mean'] = float(np.mean(l2_norms))
+            coeff_metadata['l2_norm_std'] = float(np.std(l2_norms))
+            coeff_metadata['l2_norm_min'] = float(np.min(l2_norms))
+            coeff_metadata['l2_norm_max'] = float(np.max(l2_norms))
+            
+            metadata_path = os.path.join(args.out_dir, "coefficient_metadata.yaml")
+            with open(metadata_path, 'w') as f:
+                yaml.dump(coeff_metadata, f)
+            
             print(f"Saved coefficient pool to {coeff_pool_path}")
+            print(f"Saved coefficient metadata to {metadata_path}")
             print(f"Training with {num_runs} runs per sample, {num_mixture_models} models in pool")
+            print(f"\nCoefficient Pool Statistics:")
+            print(f"  L2 norms: {coeff_metadata['l2_norm_mean']:.3f} ± {coeff_metadata['l2_norm_std']:.3f}")
+            print(f"  Range: [{coeff_metadata['l2_norm_min']:.3f}, {coeff_metadata['l2_norm_max']:.3f}]\n")
             print(f"GPU-accelerated sampling enabled on device: {device}")
     elif args.training.task == "ar_mixture_transposed":
         lag_value = curriculum.lag
@@ -108,22 +134,70 @@ def train(model, args, device):
         noise_std = task_kwargs.get('noise_std', 0.2)
         num_mixture_models = task_kwargs.get('num_mixture_models', 5)
         num_runs = task_kwargs.get('num_runs', 3)
+        
+        # Extract coefficient generation parameters
+        coefficient_method = task_kwargs.get('coefficient_method', 'l2_norm')
+        coefficient_params = task_kwargs.get('coefficient_params', {})
 
         sampler_n_dims = 2 * num_runs - 1
         sampler_n_dims_override = sampler_n_dims
 
-        data_sampler = get_data_sampler("ar_mixture_transposed", n_dims=sampler_n_dims, lag=lag_value,
-                                       noise_std=noise_std, num_mixture_models=num_mixture_models,
-                                       num_runs=num_runs, use_gpu=True, device=device)
+        data_sampler = get_data_sampler(
+            "ar_mixture_transposed", 
+            n_dims=sampler_n_dims, 
+            lag=lag_value,
+            noise_std=noise_std, 
+            num_mixture_models=num_mixture_models,
+            num_runs=num_runs, 
+            use_gpu=True, 
+            device=device,
+            coefficient_method=coefficient_method,
+            coefficient_params=coefficient_params
+        )
 
         print(f"Training with transposed format: {num_runs} runs per sample, {num_mixture_models} models in pool")
         print(f"Model n_dims (token dim): {n_dims}, Sampler n_dims (num tokens): {sampler_n_dims}")
+        print(f"Coefficient method: {coefficient_method}")
+        if coefficient_method == 'root_based':
+            radius_range = coefficient_params.get('radius_range', (0.0, 0.95))
+            print(f"  Radius range: {radius_range}")
+        elif coefficient_method == 'l2_norm':
+            l2_norm = coefficient_params.get('l2_norm', 0.5)
+            print(f"  L2 norm: {l2_norm}")
         print(f"GPU-accelerated sampling enabled on device: {device}")
+        
+        # Save coefficient metadata for reproducibility
+        if not args.test_run:
+            import numpy as np
+            coeff_metadata = {
+                'method': coefficient_method,
+                'params': coefficient_params,
+                'lag': lag_value,
+                'num_models': num_mixture_models,
+                'noise_std': noise_std
+            }
+            
+            # Compute and log coefficient statistics
+            l2_norms = data_sampler.coefficient_pool.norm(dim=1).cpu().numpy()
+            coeff_metadata['l2_norm_mean'] = float(np.mean(l2_norms))
+            coeff_metadata['l2_norm_std'] = float(np.std(l2_norms))
+            coeff_metadata['l2_norm_min'] = float(np.min(l2_norms))
+            coeff_metadata['l2_norm_max'] = float(np.max(l2_norms))
+            
+            metadata_path = os.path.join(args.out_dir, "coefficient_metadata.yaml")
+            with open(metadata_path, 'w') as f:
+                yaml.dump(coeff_metadata, f)
+            
+            print(f"\nCoefficient Pool Statistics:")
+            print(f"  L2 norms: {coeff_metadata['l2_norm_mean']:.3f} ± {coeff_metadata['l2_norm_std']:.3f}")
+            print(f"  Range: [{coeff_metadata['l2_norm_min']:.3f}, {coeff_metadata['l2_norm_max']:.3f}]")
+            print(f"  Saved metadata to {metadata_path}\n")
     else:
         data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start)
 
     filtered_task_kwargs = {k: v for k, v in task_kwargs.items()
-                           if k not in ['num_mixture_models', 'noise_std', 'num_runs']}
+                           if k not in ['num_mixture_models', 'noise_std', 'num_runs', 
+                                       'coefficient_method', 'coefficient_params']}
     
     task_sampler = get_task_sampler(
         args.training.task,

@@ -1,6 +1,17 @@
 import math
+import os
+from random import randint
 
 import torch
+from torch.utils.data import DataLoader, IterableDataset
+
+# Import coefficient generators (with fallback for backward compatibility)
+try:
+    from coefficient_generators import generate_coeffs_from_roots
+    COEFFICIENT_GENERATORS_AVAILABLE = True
+except ImportError:
+    COEFFICIENT_GENERATORS_AVAILABLE = False
+    print("Warning: coefficient_generators module not found. Only l2_norm method available.")
 
 
 class DataSampler:
@@ -30,15 +41,29 @@ class ARWarmupSampler(DataSampler):
     
     def generate_bounded_coefficients(self, batch_size):
         """
-        Generate AR coefficients that prevent explosive growth.
-        Ensures the AR process remains bounded/stationary.
-
+        Generate AR coefficients that prevent explosive growth (original method).
+        
         Uses L2 normalization to fix the total energy of coefficients.
         This provides better signal-to-noise ratio while maintaining stability.
+        
+        Note: For backward compatibility. New code should use 
+        generate_bounded_coefficients_with_norm() or coefficient generation methods.
         """
-        # Generate coefficients from N(0, 1) and normalize L2 norm to 0.5
+        return self.generate_bounded_coefficients_with_norm(batch_size, 0.5)
+    
+    def generate_bounded_coefficients_with_norm(self, batch_size, l2_norm=0.5):
+        """
+        Generate AR coefficients with configurable L2 norm.
+        
+        Args:
+            batch_size: Number of coefficient vectors to generate
+            l2_norm: Target L2 norm for each coefficient vector
+            
+        Returns:
+            coeffs: (batch_size, lag) tensor of coefficients
+        """
         coeffs = torch.randn(batch_size, self.lag)
-        coeffs = coeffs / coeffs.norm(dim=1, keepdim=True) * 0.5
+        coeffs = coeffs / coeffs.norm(dim=1, keepdim=True) * l2_norm
         return coeffs
     
     def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
@@ -153,12 +178,40 @@ class ARMixtureSampler(ARWarmupSampler):
     each generated from a randomly selected model from the coefficient pool.
     """
     def __init__(self, n_dims, lag=3, base_sampler=None, noise_std=0.2, num_mixture_models=5, num_runs=3, use_gpu=True, device=None, **kwargs):
+        # Extract coefficient generation parameters before passing to super
+        coefficient_method = kwargs.pop('coefficient_method', 'l2_norm')
+        coefficient_params = kwargs.pop('coefficient_params', {})
+        
+        # Now pass remaining kwargs to super (coefficient params removed)
         super().__init__(n_dims, lag, base_sampler, noise_std, **kwargs)
         self.num_mixture_models = num_mixture_models
         self.num_runs = num_runs
         self.use_gpu = use_gpu # Generate everything at the start more quickly
         self.device = device if device is not None else (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
-        self.coefficient_pool = self.generate_bounded_coefficients(num_mixture_models)
+        
+        # Generate coefficient pool based on method
+        if coefficient_method == 'root_based':
+            if not COEFFICIENT_GENERATORS_AVAILABLE:
+                raise ImportError("coefficient_generators module required for root_based method. "
+                                "Make sure coefficient_generators.py is in the same directory.")
+            radius_range = coefficient_params.get('radius_range', (0.0, 0.95))
+            if isinstance(radius_range, list):
+                radius_range = tuple(radius_range)  # Convert from YAML list to tuple
+            self.coefficient_pool = generate_coeffs_from_roots(
+                self.lag, 
+                num_mixture_models, 
+                radius_range=radius_range
+            )
+            print(f"Generated coefficient pool using root_based method with radius_range={radius_range}")
+        elif coefficient_method == 'l2_norm':
+            l2_norm = coefficient_params.get('l2_norm', 0.5)
+            self.coefficient_pool = self.generate_bounded_coefficients_with_norm(
+                num_mixture_models, l2_norm
+            )
+            print(f"Generated coefficient pool using l2_norm method with norm={l2_norm}")
+        else:
+            raise ValueError(f"Unknown coefficient_method: {coefficient_method}. "
+                           f"Supported methods: 'root_based', 'l2_norm'")
 
         # Move coefficient pool to GPU if using GPU sampling
         if self.use_gpu and self.device.type in ['cuda', 'mps']:
@@ -226,6 +279,7 @@ class ARMixtureSampler(ARWarmupSampler):
         batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag, device=self.device)
         batch_coefficient_pool = batch_coefficient_pool / batch_coefficient_pool.norm(dim=1, keepdim=True) * 0.5
 
+        # Each run randomly samples from the pool (in-context learning across pool)
         coeff_indices = torch.randint(0, self.num_mixture_models, (total_sequences,), device=self.device)
         all_coefficients = batch_coefficient_pool[coeff_indices]
 
@@ -322,6 +376,7 @@ class ARMixtureSampler(ARWarmupSampler):
 
         for batch_idx in range(b_size):
             for run_idx in range(self.num_runs):
+                # Each run samples from the pool (in-context learning across pool)
                 coeff_idx = torch.randint(0, self.num_mixture_models, (1,)).item()
                 coeff_indices.append(coeff_idx)
                 coefficients = batch_coefficient_pool[coeff_idx]
