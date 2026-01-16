@@ -194,7 +194,14 @@ class ARMixtureSampler(ARWarmupSampler):
             if not COEFFICIENT_GENERATORS_AVAILABLE:
                 raise ImportError("coefficient_generators module required for root_based method. "
                                 "Make sure coefficient_generators.py is in the same directory.")
-            radius_range = coefficient_params.get('radius_range', (0.0, 0.95))
+            # Handle both dict and Args/OmegaConf objects
+            if hasattr(coefficient_params, 'radius_range'):
+                radius_range = coefficient_params.radius_range
+            elif isinstance(coefficient_params, dict):
+                radius_range = coefficient_params.get('radius_range', (0.0, 0.95))
+            else:
+                radius_range = (0.0, 0.95)
+            
             if isinstance(radius_range, list):
                 radius_range = tuple(radius_range)  # Convert from YAML list to tuple
             self.coefficient_pool = generate_coeffs_from_roots(
@@ -204,7 +211,13 @@ class ARMixtureSampler(ARWarmupSampler):
             )
             print(f"Generated coefficient pool using root_based method with radius_range={radius_range}")
         elif coefficient_method == 'l2_norm':
-            l2_norm = coefficient_params.get('l2_norm', 0.5)
+            # Handle both dict and Args/OmegaConf objects
+            if hasattr(coefficient_params, 'l2_norm'):
+                l2_norm = coefficient_params.l2_norm
+            elif isinstance(coefficient_params, dict):
+                l2_norm = coefficient_params.get('l2_norm', 0.5)
+            else:
+                l2_norm = 0.5
             self.coefficient_pool = self.generate_bounded_coefficients_with_norm(
                 num_mixture_models, l2_norm
             )
