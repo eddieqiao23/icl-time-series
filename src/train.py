@@ -159,10 +159,22 @@ def train(model, args, device):
         print(f"Model n_dims (token dim): {n_dims}, Sampler n_dims (num tokens): {sampler_n_dims}")
         print(f"Coefficient method: {coefficient_method}")
         if coefficient_method == 'root_based':
-            radius_range = coefficient_params.get('radius_range', (0.0, 0.95))
+            # Handle both dict and Args/OmegaConf objects
+            if hasattr(coefficient_params, 'radius_range'):
+                radius_range = coefficient_params.radius_range
+            elif isinstance(coefficient_params, dict):
+                radius_range = coefficient_params.get('radius_range', (0.0, 0.95))
+            else:
+                radius_range = (0.0, 0.95)
             print(f"  Radius range: {radius_range}")
         elif coefficient_method == 'l2_norm':
-            l2_norm = coefficient_params.get('l2_norm', 0.5)
+            # Handle both dict and Args/OmegaConf objects
+            if hasattr(coefficient_params, 'l2_norm'):
+                l2_norm = coefficient_params.l2_norm
+            elif isinstance(coefficient_params, dict):
+                l2_norm = coefficient_params.get('l2_norm', 0.5)
+            else:
+                l2_norm = 0.5
             print(f"  L2 norm: {l2_norm}")
         print(f"GPU-accelerated sampling enabled on device: {device}")
         
