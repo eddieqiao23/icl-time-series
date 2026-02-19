@@ -131,18 +131,21 @@ def generate_coeffs_scaled_with_resampling(
 def generate_coeffs_from_roots(
     lag: int,
     num_models: int,
-    radius_range: Tuple[float, float] = (0.7, 0.95)
+    radius_range: Tuple[float, float] = (0.7, 0.95),
+    max_l2_norm: Optional[float] = None,
+    max_attempts: int = 100
 ) -> torch.Tensor:
     """
     Root-Based Generation
-    
-    Sample roots uniformly in the unit circle. Use these roots to compute
+    Sample roots from a specified radius range and angles, then compute
     the characteristic polynomial and extract the AR coefficients.
     
     Args:
         lag: AR order (number of roots/coefficients)
         num_models: Number of coefficient vectors to generate
         radius_range: (min, max) radii for roots 
+        max_l2_norm: If provided, filter coefficients by L2 norm
+        max_attempts: Maximum attempts to find stable/bounded coefficients
         
     Returns:
         coeffs: (num_models, lag) tensor of stable coefficients
@@ -150,6 +153,7 @@ def generate_coeffs_from_roots(
     coeffs_list = []
     
     for _ in range(num_models):
+      for attempt in range(max_attempts):
         radii = torch.rand(lag) * (radius_range[1] - radius_range[0]) + radius_range[0]
         angles = torch.rand(lag) * 2 * np.pi
         roots = radii * torch.exp(1j * angles)
@@ -167,7 +171,18 @@ def generate_coeffs_from_roots(
         poly = np.poly(roots_np) # [1, a_1, a_2, ..., a_p]
         ar_coeffs = -torch.from_numpy(poly[1:].real).float()
         
-        coeffs_list.append(ar_coeffs[:lag])
+        # Filter by L2 norm to avoid high-SNR outliers if requested
+        if max_l2_norm is not None:
+            if ar_coeffs.norm() <= max_l2_norm:
+                coeffs_list.append(ar_coeffs[:lag])
+                break
+            elif attempt == max_attempts - 1:
+                # If we fail to find one, just use the last one anyway or warn
+                print(f"Warning: could not find coefficients with L2 <= {max_l2_norm} after {max_attempts} attempts.")
+                coeffs_list.append(ar_coeffs[:lag])
+        else:
+            coeffs_list.append(ar_coeffs[:lag])
+            break
     
     return torch.stack(coeffs_list)
 

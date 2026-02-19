@@ -181,6 +181,7 @@ class ARMixtureSampler(ARWarmupSampler):
         # Extract coefficient generation parameters before passing to super
         coefficient_method = kwargs.pop('coefficient_method', 'l2_norm')
         coefficient_params = kwargs.pop('coefficient_params', {})
+        self.regenerate_pool = kwargs.pop('regenerate_pool', False)  # For evaluation: regenerate pool each time
         
         # Now pass remaining kwargs to super (coefficient params removed)
         super().__init__(n_dims, lag, base_sampler, noise_std, **kwargs)
@@ -188,6 +189,10 @@ class ARMixtureSampler(ARWarmupSampler):
         self.num_runs = num_runs
         self.use_gpu = use_gpu # Generate everything at the start more quickly
         self.device = device if device is not None else (torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'))
+        
+        # Store coefficient generation settings for potential regeneration
+        self.coefficient_method = coefficient_method
+        self.coefficient_params = coefficient_params
         
         # Generate coefficient pool based on method
         if coefficient_method == 'root_based':
@@ -198,18 +203,25 @@ class ARMixtureSampler(ARWarmupSampler):
             if hasattr(coefficient_params, 'radius_range'):
                 radius_range = coefficient_params.radius_range
             elif isinstance(coefficient_params, dict):
-                radius_range = coefficient_params.get('radius_range', (0.0, 0.95))
+                radius_range = coefficient_params.get('radius_range', (0.3, 0.8))
             else:
-                radius_range = (0.0, 0.95)
+                radius_range = (0.3, 0.8)
             
             if isinstance(radius_range, list):
                 radius_range = tuple(radius_range)  # Convert from YAML list to tuple
+            
+            # Extract stability parameters
+            max_l2_norm = coefficient_params.get('max_l2_norm', 5.0) if isinstance(coefficient_params, dict) else getattr(coefficient_params, 'max_l2_norm', 5.0)
+            max_attempts = coefficient_params.get('max_attempts', 100) if isinstance(coefficient_params, dict) else getattr(coefficient_params, 'max_attempts', 100)
+            
             self.coefficient_pool = generate_coeffs_from_roots(
                 self.lag, 
                 num_mixture_models, 
-                radius_range=radius_range
+                radius_range=radius_range,
+                max_l2_norm=max_l2_norm,
+                max_attempts=max_attempts
             )
-            print(f"Generated coefficient pool using root_based method with radius_range={radius_range}")
+            print(f"Generated coefficient pool using root_based method with radius_range={radius_range}, max_l2_norm={max_l2_norm}")
         elif coefficient_method == 'l2_norm':
             # Handle both dict and Args/OmegaConf objects
             if hasattr(coefficient_params, 'l2_norm'):
@@ -229,6 +241,50 @@ class ARMixtureSampler(ARWarmupSampler):
         # Move coefficient pool to GPU if using GPU sampling
         if self.use_gpu and self.device.type in ['cuda', 'mps']:
             self.coefficient_pool = self.coefficient_pool.to(self.device)
+
+    def _generate_coefficient_pool(self):
+        """Generate a new coefficient pool based on stored settings"""
+        if self.coefficient_method == 'root_based':
+            # Handle both dict and Args/OmegaConf objects
+            if hasattr(self.coefficient_params, 'radius_range'):
+                radius_range = self.coefficient_params.radius_range
+            elif isinstance(self.coefficient_params, dict):
+                radius_range = self.coefficient_params.get('radius_range', (0.3, 0.8))
+            else:
+                radius_range = (0.3, 0.8)
+            
+            if isinstance(radius_range, list):
+                radius_range = tuple(radius_range)
+            
+            # Extract stability parameters
+            max_l2_norm = self.coefficient_params.get('max_l2_norm', 5.0) if isinstance(self.coefficient_params, dict) else getattr(self.coefficient_params, 'max_l2_norm', 5.0)
+            max_attempts = self.coefficient_params.get('max_attempts', 100) if isinstance(self.coefficient_params, dict) else getattr(self.coefficient_params, 'max_attempts', 100)
+            
+            pool = generate_coeffs_from_roots(
+                self.lag, 
+                self.num_mixture_models, 
+                radius_range=radius_range,
+                max_l2_norm=max_l2_norm,
+                max_attempts=max_attempts
+            )
+        elif self.coefficient_method == 'l2_norm':
+            # Handle both dict and Args/OmegaConf objects
+            if hasattr(self.coefficient_params, 'l2_norm'):
+                l2_norm = self.coefficient_params.l2_norm
+            elif isinstance(self.coefficient_params, dict):
+                l2_norm = self.coefficient_params.get('l2_norm', 0.5)
+            else:
+                l2_norm = 0.5
+            pool = self.generate_bounded_coefficients_with_norm(
+                self.num_mixture_models, l2_norm
+            )
+        else:
+            raise ValueError(f"Unknown coefficient_method: {self.coefficient_method}")
+        
+        if self.use_gpu and self.device.type in ['cuda', 'mps']:
+            pool = pool.to(self.device)
+        
+        return pool
 
     def _generate_single_run(self, run_length, coefficients, seed=None):
         """
@@ -288,16 +344,19 @@ class ARMixtureSampler(ARWarmupSampler):
         if seeds is not None:
             torch.manual_seed(seeds[0])
 
-        # Generate coefficient pool with L2 normalization
-        batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag, device=self.device)
-        batch_coefficient_pool = batch_coefficient_pool / batch_coefficient_pool.norm(dim=1, keepdim=True) * 0.5
+        # Regenerate coefficient pool if requested (for evaluation)
+        if self.regenerate_pool:
+            batch_coefficient_pool = self._generate_coefficient_pool()
+        else:
+            # Use the fixed coefficient pool initialized in __init__
+            batch_coefficient_pool = self.coefficient_pool
 
         # Each run randomly samples from the pool (in-context learning across pool)
         coeff_indices = torch.randint(0, self.num_mixture_models, (total_sequences,), device=self.device)
         all_coefficients = batch_coefficient_pool[coeff_indices]
 
         self.current_coefficient_pool = batch_coefficient_pool.cpu()
-        self.current_coefficient_ids = coeff_indices.cpu()
+        self.current_coefficient_ids = coeff_indices.cpu().view(b_size, self.num_runs)
 
         T = run_length + 1 + self.lag
         z_batch = torch.zeros(total_sequences, T, device=self.device)
@@ -378,20 +437,24 @@ class ARMixtureSampler(ARWarmupSampler):
         if n_dims_truncated is not None and n_dims_truncated != expected_dims:
             print(f"Warning: n_dims_truncated={n_dims_truncated} but expected {expected_dims} for {self.num_runs} runs")
 
-        # Generate coefficient pool with L2 normalization
-        batch_coefficient_pool = torch.randn(self.num_mixture_models, self.lag)
-        batch_coefficient_pool = batch_coefficient_pool / batch_coefficient_pool.norm(dim=1, keepdim=True) * 0.5
-        self.current_coefficient_pool = batch_coefficient_pool
+        # Regenerate coefficient pool if requested (for evaluation)
+        if self.regenerate_pool:
+            batch_coefficient_pool = self._generate_coefficient_pool()
+        else:
+            # Use the fixed coefficient pool initialized in __init__
+            batch_coefficient_pool = self.coefficient_pool
+        
+        self.current_coefficient_pool = batch_coefficient_pool.cpu()
 
         xs_b = torch.zeros(b_size, run_length, expected_dims)
         ys_b = torch.zeros(b_size, run_length)
-        coeff_indices = []
+        coeff_indices = torch.randint(0, self.num_mixture_models, (b_size * self.num_runs,))
 
         for batch_idx in range(b_size):
             for run_idx in range(self.num_runs):
                 # Each run samples from the pool (in-context learning across pool)
-                coeff_idx = torch.randint(0, self.num_mixture_models, (1,)).item()
-                coeff_indices.append(coeff_idx)
+                seq_idx = batch_idx * self.num_runs + run_idx
+                coeff_idx = coeff_indices[seq_idx].item()
                 coefficients = batch_coefficient_pool[coeff_idx]
 
                 # Generate AR sequence for this run
@@ -413,7 +476,7 @@ class ARMixtureSampler(ARWarmupSampler):
                     ys_b[batch_idx, :] = sequence[1:run_length+1]  # v1, v2, v3, ... (targets)
 
         self.current_ys = ys_b
-        self.current_coefficient_ids = torch.tensor(coeff_indices)
+        self.current_coefficient_ids = torch.tensor(coeff_indices).view(b_size, self.num_runs)
 
         return xs_b
 
