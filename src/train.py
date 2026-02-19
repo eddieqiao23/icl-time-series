@@ -89,10 +89,18 @@ def train(model, args, device):
             print(f"Warning: model.n_dims={n_dims} but expected {expected_n_dims} for num_runs={num_runs}")
             print(f"Using model.n_dims={n_dims} anyway, but this may cause issues.")
 
+        # Extract coefficient generation parameters
+        coefficient_method = task_kwargs.get('coefficient_method', 'l2_norm')
+        coefficient_params = task_kwargs.get('coefficient_params', {})
+        regenerate_pool = task_kwargs.get('regenerate_pool', False)
+        
         # Pass device to enable GPU-accelerated sampling
         data_sampler = get_data_sampler("ar_mixture", n_dims=n_dims, lag=lag_value,
                                        noise_std=noise_std, num_mixture_models=num_mixture_models,
-                                       num_runs=num_runs, use_gpu=True, device=device)
+                                       num_runs=num_runs, use_gpu=True, device=device,
+                                       coefficient_method=coefficient_method,
+                                       coefficient_params=coefficient_params,
+                                       regenerate_pool=regenerate_pool)
 
         # Save the coefficients so they can be used during testing
         if not args.test_run:
@@ -142,6 +150,9 @@ def train(model, args, device):
         sampler_n_dims = 2 * num_runs - 1
         sampler_n_dims_override = sampler_n_dims
 
+        # Extract regenerate_pool setting
+        regenerate_pool = task_kwargs.get('regenerate_pool', False)
+        
         data_sampler = get_data_sampler(
             "ar_mixture_transposed", 
             n_dims=sampler_n_dims, 
@@ -152,7 +163,8 @@ def train(model, args, device):
             use_gpu=True, 
             device=device,
             coefficient_method=coefficient_method,
-            coefficient_params=coefficient_params
+            coefficient_params=coefficient_params,
+            regenerate_pool=regenerate_pool  # ← ADD THIS
         )
 
         print(f"Training with transposed format: {num_runs} runs per sample, {num_mixture_models} models in pool")
@@ -209,7 +221,7 @@ def train(model, args, device):
 
     filtered_task_kwargs = {k: v for k, v in task_kwargs.items()
                            if k not in ['num_mixture_models', 'noise_std', 'num_runs', 
-                                       'coefficient_method', 'coefficient_params']}
+                                       'coefficient_method', 'coefficient_params', 'regenerate_pool']}
     
     task_sampler = get_task_sampler(
         args.training.task,
