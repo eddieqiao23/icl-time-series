@@ -507,12 +507,179 @@ class ARMixtureTransposedSampler(ARMixtureSampler):
         return xs_transposed
 
 
+class MLRSampler(DataSampler):
+    """
+    Mixture of Linear Regression sampler.
+
+    Per sample (one element of the batch):
+      1. Draw a fresh pool of K coefficient vectors b_k in R^d (Gaussian, optionally unit-normalized).
+      2. For each of num_batches "batches" i = 1..N:
+         - Draw beta_i uniformly from the pool.
+         - Draw T+1 inputs x_{i,t} ~ N(0, I_d).
+         - Compute y_{i,t} = <beta_i, x_{i,t}> (noiseless).
+      3. Pack into one input token per batch (interleaved):
+           [x_{i,1}, y_{i,1}, x_{i,2}, y_{i,2}, ..., x_{i,T}, y_{i,T}, x_{i,T+1}]
+         of length D = T*(d+1) + d.
+      4. Store y_{i,T+1} as scalar targets in current_ys.
+
+    Returns xs of shape (B, N, D). The model's _combine() zero-pads current_ys to
+    output tokens [y, 0, ..., 0] of dim D and interleaves with xs to form the
+    length-2N internal sequence:
+       [in_1, out_1, in_2, out_2, ..., in_N, out_N]
+    """
+
+    def __init__(
+        self,
+        n_dims,
+        num_mixture_models=2,
+        num_batches_per_sample=30,
+        batch_size_per_task=2,
+        regressor_dim=4,
+        normalize_coeffs=True,
+        regenerate_pool=True,
+        noise_std=0.0,
+        use_gpu=True,
+        device=None,
+        **kwargs,
+    ):
+        super().__init__(n_dims)
+        self.K = int(num_mixture_models)
+        self.N = int(num_batches_per_sample)
+        self.T = int(batch_size_per_task)
+        self.d = int(regressor_dim)
+        self.normalize_coeffs = bool(normalize_coeffs)
+        self.regenerate_pool = bool(regenerate_pool)
+        self.noise_std = float(noise_std)
+        self.use_gpu = use_gpu
+        self.device = device if device is not None else (
+            torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+        )
+
+        expected_D = self.T * (self.d + 1) + self.d
+        assert n_dims == expected_D, (
+            f"MLRSampler: token dim n_dims={n_dims} but expected "
+            f"T*(d+1)+d = {self.T}*({self.d}+1)+{self.d} = {expected_D}"
+        )
+        self.D = expected_D
+
+        self.coefficient_pool = self._make_pool()
+
+        self.current_ys = None
+        self.current_coefficient_pool = None
+        self.current_coefficient_ids = None
+
+    def _make_pool(self):
+        pool = torch.randn(self.K, self.d, device=self.device if self.use_gpu else 'cpu')
+        if self.normalize_coeffs:
+            pool = pool / pool.norm(dim=1, keepdim=True)
+        return pool
+
+    def sample_xs(self, n_points, b_size, n_dims_truncated=None, seeds=None):
+        """
+        Args:
+            n_points: ignored if it matches self.N; otherwise used as N (number of batches).
+            b_size: batch dimension B.
+            n_dims_truncated: ignored (we always emit dim D).
+            seeds: optional list of B seeds for reproducibility.
+
+        Returns:
+            xs: (B, N, D)  -- input tokens
+        Side effects:
+            self.current_ys: (B, N)  -- scalar targets y_{i,T+1}
+            self.current_coefficient_pool: (K, d) on CPU
+            self.current_coefficient_ids: (B, N) long, which pool index each batch used
+        """
+        N = int(n_points) if n_points is not None else self.N
+        T, d, K, D = self.T, self.d, self.K, self.D
+        dev = self.device if self.use_gpu else torch.device('cpu')
+
+        if seeds is not None:
+            assert len(seeds) == b_size
+
+        # Optionally regenerate pool per sample (default True per design).
+        if self.regenerate_pool:
+            pool = self._make_pool()
+        else:
+            pool = self.coefficient_pool
+
+        # Per-sample pool would be ideal, but a single pool per sample-in-batch
+        # would require K*B coeff vectors; simplest: one shared pool across the
+        # whole minibatch but a fresh pool per sample_xs call (matches AR setup).
+        # The model only sees one prompt at a time anyway -- it can't tell that
+        # other elements of the batch share a pool.
+
+        if seeds is not None:
+            xs = torch.zeros(b_size, N, D, device=dev)
+            ys = torch.zeros(b_size, N, device=dev)
+            coeff_ids = torch.zeros(b_size, N, dtype=torch.long, device=dev)
+            for b, seed in enumerate(seeds):
+                g = torch.Generator(device=dev)
+                g.manual_seed(int(seed))
+                # Coefficient index per batch
+                ids_b = torch.randint(0, K, (N,), generator=g, device=dev)
+                betas_b = pool[ids_b]  # (N, d)
+                # Sample x's: (N, T+1, d)
+                x_all = torch.randn(N, T + 1, d, generator=g, device=dev)
+                # y_{i,t} = <beta_i, x_{i,t}> [+ noise]: (N, T+1)
+                y_all = (x_all * betas_b.unsqueeze(1)).sum(dim=-1)
+                if self.noise_std > 0:
+                    y_all = y_all + self.noise_std * torch.randn(
+                        N, T + 1, generator=g, device=dev
+                    )
+                xs[b] = self._pack_input_tokens(x_all, y_all)
+                ys[b] = y_all[:, T]  # query target y_{i, T+1}
+                coeff_ids[b] = ids_b
+        else:
+            # Coefficient index per (batch_elem, sample_in_prompt)
+            coeff_ids = torch.randint(0, K, (b_size, N), device=dev)
+            betas = pool[coeff_ids]  # (B, N, d)
+            x_all = torch.randn(b_size, N, T + 1, d, device=dev)
+            # y_{b,i,t} = <beta_{b,i}, x_{b,i,t}> [+ noise]: (B, N, T+1)
+            y_all = (x_all * betas.unsqueeze(2)).sum(dim=-1)
+            if self.noise_std > 0:
+                y_all = y_all + self.noise_std * torch.randn(
+                    b_size, N, T + 1, device=dev
+                )
+            xs = self._pack_input_tokens(x_all, y_all)
+            ys = y_all[..., T]
+
+        self.current_ys = ys.cpu()
+        self.current_coefficient_pool = pool.cpu()
+        self.current_coefficient_ids = coeff_ids.cpu()
+
+        return xs.cpu()
+
+    def _pack_input_tokens(self, x_all, y_all):
+        """
+        Pack into interleaved input tokens.
+
+        x_all: (..., T+1, d)
+        y_all: (..., T+1)   (only y[..., :T] are used; the query y[..., T] is held out)
+
+        Returns: (..., D) where D = T*(d+1) + d, layout:
+            [x_1, y_1, x_2, y_2, ..., x_T, y_T, x_{T+1}]
+        """
+        T = self.T
+        d = self.d
+        leading = x_all.shape[:-2]
+        # Pairs portion: (..., T, d+1) = concat of x_t and y_t along last dim
+        x_pairs = x_all[..., :T, :]  # (..., T, d)
+        y_pairs = y_all[..., :T, None]  # (..., T, 1)
+        pair_blocks = torch.cat([x_pairs, y_pairs], dim=-1)  # (..., T, d+1)
+        pair_flat = pair_blocks.reshape(*leading, T * (d + 1))  # (..., T*(d+1))
+        # Query portion: x_{T+1}
+        query = x_all[..., T, :]  # (..., d)
+        # Final token
+        return torch.cat([pair_flat, query], dim=-1)  # (..., T*(d+1)+d)
+
+
 def get_data_sampler(data_name, n_dims, **kwargs):
     names_to_classes = {
         "gaussian": GaussianSampler,
         "ar_warmup": ARWarmupSampler,
         "ar_mixture": ARMixtureSampler,
         "ar_mixture_transposed": ARMixtureTransposedSampler,
+        "linear_regression_mixture": MLRSampler,
     }
     if data_name in names_to_classes:
         sampler_cls = names_to_classes[data_name]

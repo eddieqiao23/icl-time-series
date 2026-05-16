@@ -113,6 +113,7 @@ def get_task_sampler(
         "ar_warmup": ARWarmup,
         "ar_mixture": ARMixture,
         "ar_mixture_transposed": ARMixtureTransposed,
+        "linear_regression_mixture": LinearRegressionMixture,
     }
     if task_name in task_names_to_classes:
         task_cls = task_names_to_classes[task_name]
@@ -228,6 +229,35 @@ class ARMixture(Task):
         This method is not used during training (we use current_ys from sampler instead).
         Returns zeros as placeholder.
         """
+        return torch.zeros(xs_b.shape[0], xs_b.shape[1], device=xs_b.device)
+
+    @staticmethod
+    def get_metric():
+        return squared_error
+
+    @staticmethod
+    def get_training_metric():
+        return mean_squared_error
+
+
+class LinearRegressionMixture(Task):
+    """
+    Mixture of Linear Regression task.
+
+    The MLRSampler produces packed input tokens (B, N, D) with D = T*(d+1)+d, and
+    scalar targets current_ys of shape (B, N) holding y_{i,T+1}. The model uses
+    predict_vector=False so its forward pass returns (B, N) predictions -- one
+    scalar prediction per batch -- and we compare against current_ys with plain
+    MSE.
+
+    This class is intentionally a thin shim (like ARMixture): targets are
+    sampler-driven, so evaluate() returns a zero placeholder.
+    """
+
+    def __init__(self, n_dims, batch_size, pool_dict=None, seeds=None, **kwargs):
+        super().__init__(n_dims, batch_size, pool_dict, seeds)
+
+    def evaluate(self, xs_b: torch.Tensor) -> torch.Tensor:
         return torch.zeros(xs_b.shape[0], xs_b.shape[1], device=xs_b.device)
 
     @staticmethod

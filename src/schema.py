@@ -41,6 +41,10 @@ TASK_LIST = [
     "linear_classification",
     "relu_2nn_regression",
     "decision_tree",
+    "ar_warmup",
+    "ar_mixture",
+    "ar_mixture_transposed",
+    "linear_regression_mixture",
 ]
 
 training_schema = {

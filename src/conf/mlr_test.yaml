@@ -1,0 +1,42 @@
+inherit:
+    - models/small.yaml
+
+model:
+    n_dims: 14   # D = T*(d+1)+d = 2*5+4 = 14
+    n_positions: 5  # N = number of batches per sample
+
+training:
+    task: linear_regression_mixture
+    data: linear_regression_mixture
+    task_kwargs:
+        num_mixture_models: 2          # K
+        num_batches_per_sample: 5      # N (small for quick test)
+        batch_size_per_task: 2         # T
+        regressor_dim: 4               # d
+        normalize_coeffs: true
+        regenerate_pool: true
+    batch_size: 64
+    learning_rate: 0.0001
+    save_every_steps: 1000
+    keep_every_steps: 100000
+    train_steps: 501
+    curriculum:
+        dims:
+            start: 14
+            end: 14
+            inc: 1
+            interval: 2000
+        points:
+            start: 5
+            end: 5
+            inc: 1
+            interval: 2000
+
+out_dir: ../models/mlr_test
+wandb:
+    project: mlr_test
+    entity: null
+    notes: "MLR smoke test - T=2 K=2 N=5 d=4"
+    log_every_steps: 50
+
+test_run: True

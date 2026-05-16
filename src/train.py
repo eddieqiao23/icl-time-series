@@ -9,7 +9,6 @@ from tqdm import tqdm
 import torch
 import yaml
 
-from eval import get_run_metrics
 from tasks import get_task_sampler
 from samplers import get_data_sampler
 from curriculum import Curriculum
@@ -216,12 +215,50 @@ def train(model, args, device):
             print(f"  L2 norms: {coeff_metadata['l2_norm_mean']:.3f} ± {coeff_metadata['l2_norm_std']:.3f}")
             print(f"  Range: [{coeff_metadata['l2_norm_min']:.3f}, {coeff_metadata['l2_norm_max']:.3f}]")
             print(f"  Saved metadata to {metadata_path}\n")
+    elif args.training.task == "linear_regression_mixture":
+        K = int(task_kwargs.get('num_mixture_models', 2))
+        N = int(task_kwargs.get('num_batches_per_sample', 30))
+        T = int(task_kwargs.get('batch_size_per_task', 2))
+        d = int(task_kwargs.get('regressor_dim', 4))
+        normalize_coeffs = bool(task_kwargs.get('normalize_coeffs', True))
+        regenerate_pool = bool(task_kwargs.get('regenerate_pool', True))
+        noise_std = float(task_kwargs.get('noise_std', 0.0))
+
+        expected_D = T * (d + 1) + d
+        assert n_dims == expected_D, (
+            f"model.n_dims={n_dims} but expected T*(d+1)+d = {T}*({d}+1)+{d} = {expected_D}"
+        )
+        # sampler emits xs of shape (B, N, D); set the override so train loop
+        # passes D as n_dims_truncated.
+        sampler_n_dims_override = n_dims
+
+        data_sampler = get_data_sampler(
+            "linear_regression_mixture",
+            n_dims=n_dims,
+            num_mixture_models=K,
+            num_batches_per_sample=N,
+            batch_size_per_task=T,
+            regressor_dim=d,
+            normalize_coeffs=normalize_coeffs,
+            regenerate_pool=regenerate_pool,
+            noise_std=noise_std,
+            use_gpu=True,
+            device=device,
+        )
+
+        print(f"MLR setup: K={K} mixture components, N={N} batches/sample, T={T} pairs/batch, d={d}")
+        print(f"  Token dim D = T*(d+1)+d = {expected_D}")
+        print(f"  Coefficient normalization: {normalize_coeffs}")
+        print(f"  Pool regeneration per sample: {regenerate_pool}")
+        print(f"  Noise std: {noise_std}")
     else:
         data_sampler = get_data_sampler(args.training.data, n_dims=args.training.curriculum.dims.start)
 
     filtered_task_kwargs = {k: v for k, v in task_kwargs.items()
-                           if k not in ['num_mixture_models', 'noise_std', 'num_runs', 
-                                       'coefficient_method', 'coefficient_params', 'regenerate_pool']}
+                           if k not in ['num_mixture_models', 'noise_std', 'num_runs',
+                                       'coefficient_method', 'coefficient_params', 'regenerate_pool',
+                                       'num_batches_per_sample', 'batch_size_per_task',
+                                       'regressor_dim', 'normalize_coeffs']}
     
     task_sampler = get_task_sampler(
         args.training.task,
@@ -295,7 +332,7 @@ def train(model, args, device):
 
         task = task_sampler(**task_sampler_args)
 
-        if args.training.task in ["ar_warmup", "ar_mixture"] and hasattr(data_sampler, 'current_ys'):
+        if args.training.task in ["ar_warmup", "ar_mixture", "linear_regression_mixture"] and hasattr(data_sampler, 'current_ys'):
             ys = data_sampler.current_ys
         elif args.training.task == "ar_mixture_transposed" and hasattr(data_sampler, 'current_ys_vectors'):
             ys = data_sampler.current_ys_vectors
@@ -507,9 +544,6 @@ def main(args):
     print(f"Using device: {device}")
 
     train(model, args, device)
-
-    if not args.test_run:
-        _ = get_run_metrics(args.out_dir)  # precompute metrics for eval
 
 
 if __name__ == "__main__":
