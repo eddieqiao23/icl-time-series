@@ -151,7 +151,7 @@ def write_inventory(records: Iterable[CheckpointRecord], output_dir: Path) -> No
         rows.append(row)
     fields = list(rows[0]) if rows else [field.name for field in __import__("dataclasses").fields(CheckpointRecord)]
     with (output_dir / "checkpoints.csv").open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     (output_dir / "checkpoints.json").write_text(json.dumps(rows, indent=2) + "\n")

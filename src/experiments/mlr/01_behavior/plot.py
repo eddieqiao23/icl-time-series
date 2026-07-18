@@ -59,6 +59,48 @@ def main() -> None:
         plt.close(fig)
         print(f"Wrote {output}")
 
+        fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True, sharey=True)
+        methods = ["transformer", "known_pool", "em_ridge", "ridge_current", "ridge_history"]
+        labels = {
+            "transformer": "Transformer", "known_pool": "Known pool",
+            "em_ridge": "EM ridge", "ridge_current": "Current-task ridge",
+            "ridge_history": "History ridge",
+        }
+        for ax, T in zip(axes.flat, sorted({key[2] for key in grouped if key[:2] == (K, noise)})):
+            for method in methods:
+                values = grouped.get((K, noise, T, method), [])
+                if not values:
+                    continue
+                positions = sorted({value[0] for value in values})
+                matrix = np.array([[mse for n, _, mse in values if n == position]
+                                   for position in positions])
+                mean = matrix.mean(axis=1)
+                stderr = (matrix.std(axis=1, ddof=1) / np.sqrt(matrix.shape[1])
+                          if matrix.shape[1] > 1 else np.zeros_like(mean))
+                plotted = np.maximum(mean, 1e-6)
+                line, = ax.plot(positions, plotted, label=labels[method])
+                ax.fill_between(
+                    positions, np.maximum(mean - stderr, 1e-6),
+                    np.maximum(mean + stderr, 1e-6), color=line.get_color(), alpha=0.10,
+                )
+            ax.set_title(f"T={T}")
+            ax.set_yscale("log")
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+            ax.grid(True, alpha=0.3)
+        for ax in axes[-1]:
+            ax.set_xlabel("Task position")
+        for ax in axes[:, 0]:
+            ax.set_ylabel("MSE")
+        handles, legend_labels = axes.flat[0].get_legend_handles_labels()
+        fig.suptitle(f"Behavioral comparison (K={K}, noise={noise:g})", y=0.99)
+        fig.legend(handles, legend_labels, loc="upper center", ncol=3,
+                   bbox_to_anchor=(0.5, 0.955))
+        fig.tight_layout(rect=(0, 0, 1, 0.88))
+        comparison = args.output_dir / f"method_comparison_K{K}_{tag}.png"
+        fig.savefig(comparison, dpi=200)
+        plt.close(fig)
+        print(f"Wrote {comparison}")
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,6 @@
+run_name,run_id,reason
+T2_K2_N50_noiseless_500k,cf12fd18-ff9b-4229-9108-0e5733c8bcd5,early_stopping
+T5_K2_N50_noiseless_500k,a853123c-050c-4381-99dc-b62b1f14ca70,early_stopping
+T2_K3_N50_noiseless_500k,2b3a45bf-8604-41df-899a-faeac6cf5d30,early_stopping
+T5_K3_N50_noiseless_500k,2fd5054f-db81-4d29-9004-d86677d72587,early_stopping
+T5_K3_N50_noisy_500k,62d3ef10-88de-41a5-a11b-2e1c18b1edfc,early_stopping

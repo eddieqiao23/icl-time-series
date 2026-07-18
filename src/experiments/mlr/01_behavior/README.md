@@ -26,6 +26,10 @@ fixed pools and explicit uncertainty across independent pools and prompts.
   history using identical deterministic pools. Results use a long-form CSV
   plus a JSON reproducibility manifest.
 - `plot.py` creates the first paper-facing transformer comparison figures.
+- `summarize.py` converts per-pool results into per-position and late-context
+  means, standard errors, and 95% confidence intervals.
+- `RESULTS.md` records the first paper-facing interpretation of the completed
+  behavioral grid.
 - `baselines.py` contains experiment-local baseline implementations.
 
 Raw checkpoints remain outside Git. Curated CSV/JSON summaries and accepted
@@ -45,25 +49,37 @@ python src/experiments/mlr/01_behavior/evaluate.py \
 python src/experiments/mlr/01_behavior/plot.py
 ```
 
+Expensive methods can be run separately without losing existing results. For
+example, `--methods em_ridge --append` replaces only the EM rows and writes a
+separate append-run manifest.
+
+### Runtime and recovery
+
+On the local CPU runtime, the 10-pool, 200-prompt transformer/Bayes/ridge pass
+takes roughly 1--2 minutes. Causal five-initialization EM takes about 17
+minutes for all 16 conditions (`K=2`: 48--59 seconds per condition; `K=3`:
+67--83 seconds). The implementation vectorizes EM over prompts and components,
+prints a live estimate, atomically checkpoints every condition, and resumes
+completed condition-method cells with `--append`.
+
 For a quick CPU validation, add `--T 2 --K 2 --noise 0 --num-pools 1
 --batch-size 8 --methods transformer known_pool` to the evaluation command.
 
 ## Checkpoint readiness (2026-07-18)
 
 All 34 discovered MLR run directories have valid MLR configs and readable
-weights. Of the 16 conditions in the balanced `T in {2,3,4,5}` by `K in
-{2,3}` by `noise in {0,0.2}` grid, 11 have reached 500,000 steps. Five runs
-need to be resumed before the final comparison:
+weights. All 16 conditions in the balanced `T in {2,3,4,5}` by `K in {2,3}`
+by `noise in {0,0.2}` grid are ready. Eleven reached 500,000 steps and five
+completed through early stopping:
 
-| T | K | Noise | Current step | Steps remaining |
-|---:|---:|---:|---:|---:|
-| 2 | 2 | 0.0 | 417,798 | 82,202 |
-| 5 | 2 | 0.0 | 421,086 | 78,914 |
-| 2 | 3 | 0.0 | 462,707 | 37,293 |
-| 5 | 3 | 0.0 | 381,611 | 118,389 |
-| 5 | 3 | 0.2 | 361,887 | 138,113 |
+| T | K | Noise | Final step | Completion |
+|---:|---:|---:|---:|---|
+| 2 | 2 | 0.0 | 417,798 | Early stopping |
+| 5 | 2 | 0.0 | 421,086 | Early stopping |
+| 2 | 3 | 0.0 | 462,707 | Early stopping |
+| 5 | 3 | 0.0 | 381,611 | Early stopping |
+| 5 | 3 | 0.2 | 361,887 | Early stopping |
 
-No additional model shapes are needed for this experiment. The partial
-checkpoints can support development runs, but the paper-facing grid should use
-the common 500,000-step threshold. The machine-readable source of truth is
-`artifacts/summaries/readiness.csv`.
+No additional training or model shapes are needed for this experiment. The
+explicit early-stopping declarations live in `config/completion_overrides.csv`;
+the machine-readable resolved status is `artifacts/summaries/readiness.csv`.
