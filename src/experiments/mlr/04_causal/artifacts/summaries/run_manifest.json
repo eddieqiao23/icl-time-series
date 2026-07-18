@@ -1,0 +1,68 @@
+{
+  "checkpoints": [
+    {
+      "D": 19,
+      "K": 2,
+      "N": 50,
+      "T": 3,
+      "checkpoint": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T3_K2_N50_noisy_500k/88f7ba1f-b831-4c58-818e-b589172895c7/state.pt",
+      "checkpoint_readable": true,
+      "config_valid": true,
+      "d": 4,
+      "error": "",
+      "noise_std": 0.2,
+      "run_dir": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T3_K2_N50_noisy_500k/88f7ba1f-b831-4c58-818e-b589172895c7",
+      "run_id": "88f7ba1f-b831-4c58-818e-b589172895c7",
+      "run_name": "T3_K2_N50_noisy_500k",
+      "train_step": 500000
+    }
+  ],
+  "command": [
+    "src/experiments/mlr/04_causal/evaluate.py",
+    "--models-root",
+    "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr",
+    "--device",
+    "cpu"
+  ],
+  "created_at": "2026-07-18T23:25:58.037171+00:00",
+  "environment": {
+    "device": "mps",
+    "numpy": "1.26.4",
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "torch": "2.11.0"
+  },
+  "experiment": "04_causal_interventions",
+  "git_commit": "732c75ac0ca7412164215d9bcbaf933f67655ea9",
+  "outputs": [
+    "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/04_causal/artifacts/summaries/head_ablation.csv",
+    "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/04_causal/artifacts/summaries/context_ablation.csv",
+    "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/04_causal/artifacts/summaries/support_ablation.csv",
+    "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/04_causal/artifacts/summaries/activation_patching.csv",
+    "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/04_causal/artifacts/summaries/run_manifest.json"
+  ],
+  "parameters": {
+    "K": 2,
+    "N": 50,
+    "T": 3,
+    "device": "cpu",
+    "models_root": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr",
+    "noise": 0.2,
+    "num_pools": 10,
+    "num_prompts": 64,
+    "output_dir": "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/04_causal/artifacts/summaries",
+    "positions": [
+      10,
+      20,
+      30,
+      40,
+      49
+    ],
+    "seed": 59000
+  },
+  "schema_version": 1,
+  "seeds": {
+    "base_seed": 59000,
+    "pool_offset": 10000
+  }
+}

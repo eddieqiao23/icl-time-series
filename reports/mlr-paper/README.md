@@ -1,9 +1,10 @@
 # MLR results report
 
-This directory will contain a single-page HTML report presenting the accepted
-results and methodology for the MLR experiment suite.
+This directory contains the single-page HTML report presenting the accepted
+results and methodology for the MLR experiment suite. The source is in
+`site/`; run `pnpm install && pnpm test` there to build and verify it.
 
-The report will include:
+The report includes:
 
 - the packed-task setup and an explanatory methodology figure;
 - a short behavioral result section;
