@@ -1,6 +1,26 @@
 .ipynb_checkpoints
 __pycache__
+*.py[cod]
 models.zip
 models
 .DS_Store
 **/.DS_Store
+
+# Local environments and tool state
+.venv/
+wandb/
+tmp/
+
+# Scheduler and experiment logs
+*.out
+*.log
+
+# Experiment outputs are split into reviewable summaries/figures and large
+# reproducible intermediates. Only the latter stay out of Git.
+src/experiments/mlr/**/artifacts/raw/
+src/experiments/mlr/**/artifacts/cache/
+
+# Generated report bundles. Report source and curated assets remain tracked.
+reports/mlr-paper/dist/
+reports/mlr-paper/.next/
+reports/mlr-paper/node_modules/
