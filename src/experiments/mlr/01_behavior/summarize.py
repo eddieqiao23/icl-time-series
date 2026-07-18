@@ -7,6 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+from scipy.stats import t as student_t
 
 HERE = Path(__file__).resolve().parent
 
@@ -15,10 +16,11 @@ def summarize(values: list[float]) -> dict[str, float | int]:
     array = np.asarray(values, dtype=float)
     mean = float(array.mean())
     stderr = float(array.std(ddof=1) / np.sqrt(len(array))) if len(array) > 1 else 0.0
+    critical = float(student_t.ppf(0.975, len(array) - 1)) if len(array) > 1 else 0.0
     return {
         "mean_mse": mean, "stderr": stderr,
-        "ci95_low": max(mean - 1.96 * stderr, 0.0),
-        "ci95_high": mean + 1.96 * stderr, "num_pools": len(array),
+        "ci95_low": max(mean - critical * stderr, 0.0),
+        "ci95_high": mean + critical * stderr, "num_pools": len(array),
     }
 
 

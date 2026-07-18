@@ -48,18 +48,21 @@ def em_final(X,y,query,components,noise_std,regularization,seed,iterations=20,in
     """Vectorized multi-start EM on completed tasks, predicting only the final task."""
     X_hist,y_hist=X[:,:-1],y[:,:-1]; B,n,T,d=X_hist.shape; variance=max(noise_std**2,1e-6)
     grams_task=np.einsum('bnti,bntj->bnij',X_hist,X_hist); moments_task=np.einsum('bnti,bnt->bni',X_hist,y_hist)
-    rng=np.random.default_rng(seed); best_score=np.full(B,-np.inf); best=np.zeros((B,components,d)); eye=np.eye(d)[None,None]
+    rng=np.random.default_rng(seed); best_score=np.full(B,-np.inf); best=np.zeros((B,components,d)); best_priors=np.full((B,components),1/components); eye=np.eye(d)[None,None]
     for _ in range(initializations):
-        beta=rng.normal(scale=.1,size=(B,components,d))
+        beta=rng.normal(scale=.1,size=(B,components,d)); priors=np.full((B,components),1/components)
         for _ in range(iterations):
             pred=np.einsum('bnti,bki->bnkt',X_hist,beta); ll=-.5*np.square(y_hist[:,:,None,:]-pred).sum(-1)/variance
+            ll+=np.log(priors[:,None,:]+1e-12)
             ll-=ll.max(-1,keepdims=True); weights=np.exp(ll); weights/=weights.sum(-1,keepdims=True)
+            priors=weights.mean(1)
             grams=np.einsum('bnk,bnij->bkij',weights,grams_task); moments=np.einsum('bnk,bni->bki',weights,moments_task)
             beta=np.linalg.solve(grams+regularization*eye,moments[...,None])[...,0]
-        pred=np.einsum('bnti,bki->bnkt',X_hist,beta); ll=-.5*np.square(y_hist[:,:,None,:]-pred).sum(-1)/variance
+        pred=np.einsum('bnti,bki->bnkt',X_hist,beta); ll=-.5*np.square(y_hist[:,:,None,:]-pred).sum(-1)/variance; ll+=np.log(priors[:,None,:]+1e-12)
         maximum=ll.max(-1,keepdims=True); score=(maximum[...,0]+np.log(np.exp(ll-maximum).sum(-1))).sum(-1)
-        improved=score>best_score; best_score[improved]=score[improved]; best[improved]=beta[improved]
+        improved=score>best_score; best_score[improved]=score[improved]; best[improved]=beta[improved]; best_priors[improved]=priors[improved]
     pred=np.einsum('bti,bki->bkt',X[:,-1],best); ll=-.5*np.square(y[:,-1,None,:]-pred).sum(-1)/variance
+    ll+=np.log(best_priors+1e-12)
     ll-=ll.max(-1,keepdims=True); weights=np.exp(ll); weights/=weights.sum(-1,keepdims=True)
     component_pred=np.einsum('bi,bki->bk',query[:,-1],best); return (weights*component_pred).sum(-1)
 
@@ -70,8 +73,9 @@ def evaluate_prompt(model,pool,assignments,*,T,N,noise,seed,device,em_components
     X,y,query=unpack_tokens(xs.numpy().astype(np.float64),T,pool.shape[1]); target=ys.numpy().astype(np.float64)
     predictions={
         'transformer':transformer[:,-1],
-        'known_pool':known_pool_bayes(X,y,query,pool.numpy().astype(np.float64),noise)[:,-1],
-        'ridge_current':ridge_current(X,y,query)[:,-1],
+        'known_pool_uniform':known_pool_bayes(X,y,query,pool.numpy().astype(np.float64),noise)[:,-1],
+        'assignment_oracle':np.einsum('bi,bi->b',query[:,-1],pool.numpy()[assignments[:,-1].numpy()]),
+        'ridge_current':ridge_current(X,y,query,regularization=max(noise**2*pool.shape[1],1e-6))[:,-1],
         'ridge_history':ridge_history(X,y,query)[:,-1],
     }
     for fit_K in em_components:
@@ -91,10 +95,13 @@ def main():
     if 'component_count' in args.families: conditions += [('component_count',v) for v in (1,2,3,4)]
     if 'hierarchy' in args.families: conditions += [('hierarchy',v) for v in (.05,.2,.5,1.0)]
     rows=[]; args.output_dir.mkdir(parents=True,exist_ok=True); csv_path=args.output_dir/'ood_results.csv'; started=time.monotonic()
+    family_offsets={'similarity':0,'imbalance':1_000_000,'component_count':2_000_000,'hierarchy':3_000_000}
     for condition_index,(family,value) in enumerate(conditions):
         condition_started=time.monotonic()
         for pool_index in range(args.num_pools):
-            pool_seed=args.seed+100_000*condition_index+10_000+pool_index; prompt_seed=args.seed+100_000*condition_index+pool_index
+            # Pair sweep points by reusing the same base orientation, assignments,
+            # and prompt noise within each family and pool.
+            pool_seed=args.seed+family_offsets[family]+10_000+pool_index; prompt_seed=args.seed+family_offsets[family]+pool_index
             if family=='similarity': pool=similarity_pool(float(value),4,pool_seed); assignments=assignments_uniform(2,args.num_prompts,args.N,prompt_seed); em_K=(2,)
             elif family=='imbalance': pool=normalized_pool(2,4,pool_seed); assignments=assignments_imbalanced(float(value),args.num_prompts,args.N,prompt_seed); em_K=(2,)
             elif family=='component_count':

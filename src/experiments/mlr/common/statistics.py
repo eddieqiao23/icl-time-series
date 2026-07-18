@@ -6,6 +6,7 @@ import math
 from typing import Iterable
 
 import numpy as np
+from scipy.stats import t as student_t
 
 
 def mean_ci(values: Iterable[float]) -> dict[str, float | int]:
@@ -16,5 +17,6 @@ def mean_ci(values: Iterable[float]) -> dict[str, float | int]:
                 "ci95_high": math.nan, "n": 0}
     mean = float(array.mean())
     stderr = float(array.std(ddof=1) / math.sqrt(len(array))) if len(array) > 1 else 0.0
-    return {"mean": mean, "stderr": stderr, "ci95_low": mean - 1.96 * stderr,
-            "ci95_high": mean + 1.96 * stderr, "n": len(array)}
+    critical = float(student_t.ppf(0.975, len(array) - 1)) if len(array) > 1 else 0.0
+    return {"mean": mean, "stderr": stderr, "ci95_low": mean - critical * stderr,
+            "ci95_high": mean + critical * stderr, "n": len(array)}

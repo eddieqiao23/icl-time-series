@@ -83,17 +83,21 @@ def em_ridge_history(X: np.ndarray, y: np.ndarray, query: np.ndarray, *,
         task_moments = np.einsum("bnti,bnt->bni", X_hist, y_hist)
         best_score = np.full(batch, -np.inf)
         best_betas = np.zeros((batch, components, d))
+        best_priors = np.full((batch, components), 1.0 / components)
 
         for _ in range(initializations):
             betas = rng.normal(scale=0.1, size=(batch, components, d))
+            priors = np.full((batch, components), 1.0 / components)
             for _ in range(iterations):
                 support_predictions = np.einsum("bnti,bki->bnkt", X_hist, betas)
                 log_likelihood = -0.5 * np.square(
                     y_hist[:, :, None, :] - support_predictions
                 ).sum(axis=-1) / variance
+                log_likelihood += np.log(priors[:, None, :] + 1e-12)
                 log_likelihood -= log_likelihood.max(axis=-1, keepdims=True)
                 responsibilities = np.exp(log_likelihood)
                 responsibilities /= responsibilities.sum(axis=-1, keepdims=True)
+                priors = responsibilities.mean(axis=1)
                 grams = np.einsum("bnk,bnij->bkij", responsibilities, task_grams)
                 moments = np.einsum("bnk,bni->bki", responsibilities, task_moments)
                 betas = np.linalg.solve(
@@ -104,6 +108,7 @@ def em_ridge_history(X: np.ndarray, y: np.ndarray, query: np.ndarray, *,
             component_ll = -0.5 * np.square(
                 y_hist[:, :, None, :] - support_predictions
             ).sum(axis=-1) / variance
+            component_ll += np.log(priors[:, None, :] + 1e-12)
             maximum = component_ll.max(axis=-1, keepdims=True)
             score = (maximum[..., 0] + np.log(
                 np.exp(component_ll - maximum).sum(axis=-1)
@@ -111,11 +116,13 @@ def em_ridge_history(X: np.ndarray, y: np.ndarray, query: np.ndarray, *,
             improved = score > best_score
             best_score[improved] = score[improved]
             best_betas[improved] = betas[improved]
+            best_priors[improved] = priors[improved]
 
         current_predictions = np.einsum("bti,bki->bkt", X[:, n], best_betas)
         current_ll = -0.5 * np.square(
             y[:, n, None, :] - current_predictions
         ).sum(axis=-1) / variance
+        current_ll += np.log(best_priors + 1e-12)
         current_ll -= current_ll.max(axis=-1, keepdims=True)
         weights = np.exp(current_ll)
         weights /= weights.sum(axis=-1, keepdims=True)

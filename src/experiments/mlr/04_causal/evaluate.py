@@ -43,31 +43,37 @@ def mse_at(prediction, target, positions):
     return float(torch.square(prediction[:, positions].cpu() - target[:, positions]).mean().item())
 
 
-def replace_context(embeddings, ids, position, relation):
+def replace_context(embeddings, donor_embeddings, ids, position, relation, *, random_seed=0):
+    """Replace selected earlier tasks with same-position tokens from donor prompts."""
     modified = embeddings.clone()
-    input_mean = embeddings[:, 0::2].mean(dim=(0, 1))
-    output_mean = embeddings[:, 1::2].mean(dim=(0, 1))
     earlier = ids[:, :position]
-    if relation == "same": mask = earlier == ids[:, position, None]
+    same_mask = earlier == ids[:, position, None]
+    if relation == "same": mask = same_mask
     elif relation == "different": mask = earlier != ids[:, position, None]
     elif relation == "all": mask = torch.ones_like(earlier, dtype=torch.bool)
+    elif relation == "random_count":
+        mask = torch.zeros_like(earlier, dtype=torch.bool)
+        generator = torch.Generator().manual_seed(random_seed)
+        for batch in range(len(ids)):
+            count = int(same_mask[batch].sum())
+            mask[batch, torch.randperm(position, generator=generator)[:count]] = True
     else: raise ValueError(relation)
     for batch in range(len(ids)):
         tasks = torch.nonzero(mask[batch], as_tuple=False).flatten()
-        modified[batch, 2 * tasks] = input_mean
-        modified[batch, 2 * tasks + 1] = output_mean
+        modified[batch, 2 * tasks] = donor_embeddings[batch, 2 * tasks]
+        modified[batch, 2 * tasks + 1] = donor_embeddings[batch, 2 * tasks + 1]
     return modified
 
 
-def support_variants(xs, T, d):
+def support_variants(xs, donor_xs, T, d):
     variants, names = [], []
     for support in range(T):
         modified = xs.clone(); start = support * (d + 1); stop = start + d + 1
-        modified[..., start:stop] = xs[..., start:stop].mean(dim=(0, 1))
+        modified[..., start:stop] = donor_xs[..., start:stop]
         variants.append(modified); names.append(f"support_{support}")
     modified = xs.clone()
     stop = T * (d + 1)
-    modified[..., :stop] = xs[..., :stop].mean(dim=(0, 1))
+    modified[..., :stop] = donor_xs[..., :stop]
     variants.append(modified); names.append("all_supports")
     return names, variants
 
@@ -104,9 +110,15 @@ def evaluate_pool(model, *, pool, pool_index, T, K, N, noise_std,
         pool=pool, T=T, N=N, noise_std=noise_std,
         batch_size=num_prompts, seed=seed,
     )
+    donor_xs, donor_ys, _ = sample_with_pool(
+        pool=pool, T=T, N=N, noise_std=noise_std,
+        batch_size=num_prompts, seed=seed + 500_000,
+    )
     xs_device, ys_device = xs.to(device), ys.to(device)
+    donor_xs_device, donor_ys_device = donor_xs.to(device), donor_ys.to(device)
     with torch.no_grad():
         embeddings = model._read_in(model._combine(xs_device, ys_device))
+        donor_embeddings = model._read_in(model._combine(donor_xs_device, donor_ys_device))
     baseline_prediction = predict_from_embeddings(model, embeddings)
     late_positions = [position for position in positions if position >= 30]
     baseline_late = mse_at(baseline_prediction, ys, late_positions)
@@ -129,11 +141,15 @@ def evaluate_pool(model, *, pool, pool_index, T, K, N, noise_std,
     context_rows = []
     for position in positions:
         variants = []
-        for relation in ("same", "different", "all"):
-            variants.append(replace_context(embeddings, ids, position, relation))
+        relations = ("same", "different", "random_count", "all")
+        for relation in relations:
+            variants.append(replace_context(
+                embeddings, donor_embeddings, ids, position, relation,
+                random_seed=seed + position,
+            ))
         predictions = predict_from_embeddings(model, torch.cat(variants, dim=0))
         base_mse = mse_at(baseline_prediction, ys, [position])
-        for index, relation in enumerate(("same", "different", "all")):
+        for index, relation in enumerate(relations):
             prediction = predictions[index * num_prompts:(index + 1) * num_prompts]
             mse = mse_at(prediction, ys, [position])
             context_rows.append({
@@ -144,7 +160,7 @@ def evaluate_pool(model, *, pool, pool_index, T, K, N, noise_std,
             })
 
     support_rows = []
-    names, variants = support_variants(xs_device, T, pool.shape[1])
+    names, variants = support_variants(xs_device, donor_xs_device, T, pool.shape[1])
     with torch.no_grad():
         variant_predictions = model(
             torch.cat(variants), torch.cat([ys_device] * len(variants))
@@ -160,7 +176,10 @@ def evaluate_pool(model, *, pool, pool_index, T, K, N, noise_std,
 
     target_position = max(positions); source = 2 * target_position
     clean_outputs = forward_internals(model, xs, ys, device=device, hidden_states=True)
-    corrupt_embeddings = replace_context(embeddings, ids, target_position, "same")
+    corrupt_embeddings = replace_context(
+        embeddings, donor_embeddings, ids, target_position, "same",
+        random_seed=seed + target_position,
+    )
     corrupt_prediction = predict_from_embeddings(model, corrupt_embeddings)
     clean_mse = mse_at(baseline_prediction, ys, [target_position])
     corrupt_mse = mse_at(corrupt_prediction, ys, [target_position])
@@ -217,7 +236,8 @@ def main() -> None:
     write_json(build_manifest(
         repo_root=REPO_ROOT, experiment="04_causal_interventions", command=sys.argv,
         parameters=vars(args) | {"models_root": str(args.models_root), "output_dir": str(args.output_dir)},
-        checkpoints=[asdict(record)], seeds={"base_seed": args.seed, "pool_offset": 10_000},
+        checkpoints=[asdict(record)], seeds={"base_seed": args.seed, "pool_offset": 10_000,
+                                                "donor_prompt_offset": 500_000},
         outputs=[str(args.output_dir / f"{name}.csv") for name in tables] + [str(manifest_path)],
     ), manifest_path)
     print("Completed causal intervention suite")

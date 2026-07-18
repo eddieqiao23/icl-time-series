@@ -85,7 +85,9 @@ def evaluate_condition(*, record, K: int, noise_std: float, num_pools: int,
         if "known_pool" in methods:
             predictions["known_pool"] = known_pool_bayes(X, y, query, pool.numpy(), noise_std)
         if "ridge_current" in methods:
-            predictions["ridge_current"] = ridge_current(X, y, query)
+            predictions["ridge_current"] = ridge_current(
+                X, y, query, regularization=max(noise_std ** 2 * d, 1e-6)
+            )
         if "ridge_history" in methods:
             predictions["ridge_history"] = ridge_history(X, y, query)
         if "em_ridge" in methods:

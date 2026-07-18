@@ -33,11 +33,12 @@ def main():
     ax.set(xlabel='Head',ylabel='Layer',title='Head ablation effect'); ax.set_xticks(head_ids); ax.set_yticks(layers); fig.colorbar(im,ax=ax,label='Δ MSE'); fig.tight_layout(); fig.savefig(args.output_dir/'head_ablation.png',dpi=200); plt.close(fig)
 
     context=read(args.summary_dir/"context_ablation.csv"); fig,ax=plt.subplots(figsize=(7,4.5))
-    for condition in ('same','different','all'):
+    labels={'same':'Same component','different':'Different component','random_count':'Random, count matched','all':'All context'}
+    for condition in ('same','different','random_count','all'):
         positions=sorted({int(r['position']) for r in context}); means=[]; errors=[]
         for pos in positions:
             values=[float(r['delta_mse']) for r in context if r['condition']==condition and int(r['position'])==pos]; m,se=mean_se(values); means.append(m); errors.append(se)
-        ax.errorbar(positions,means,yerr=errors,marker='o',capsize=3,label=condition.capitalize())
+        ax.errorbar(positions,means,yerr=errors,marker='o',capsize=3,label=labels[condition])
     ax.axhline(0,color='black',linewidth=.8); ax.set(xlabel='Task position',ylabel='Δ MSE'); ax.xaxis.set_major_locator(MaxNLocator(integer=True)); ax.grid(True,alpha=.3); ax.legend(); fig.tight_layout(); fig.savefig(args.output_dir/'context_ablation.png',dpi=200); plt.close(fig)
 
     patch=read(args.summary_dir/"activation_patching.csv"); fig,ax=plt.subplots(figsize=(7,4.5)); means=[]; errors=[]

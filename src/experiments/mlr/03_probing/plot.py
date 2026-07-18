@@ -11,6 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.ticker import MaxNLocator
+from scipy.stats import t as student_t
 
 HERE = Path(__file__).resolve().parent
 
@@ -34,11 +35,12 @@ def main() -> None:
     summary = []
     for key, values in sorted(grouped.items()):
         mean = float(np.mean(values)); se = float(np.std(values, ddof=1) / np.sqrt(len(values)))
+        critical = float(student_t.ppf(0.975, len(values) - 1))
         summary.append({
             "model_type": key[0], "layer": key[1], "position": key[2],
             "metric": key[3], "control": key[4], "mean": mean,
-            "stderr": se, "ci95_low": mean - 1.96 * se,
-            "ci95_high": mean + 1.96 * se, "num_pools": len(values),
+            "stderr": se, "ci95_low": mean - critical * se,
+            "ci95_high": mean + critical * se, "num_pools": len(values),
         })
     with args.summary.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(summary[0]), lineterminator="\n")
@@ -56,11 +58,14 @@ def main() -> None:
                              and row["metric"] == metric and row["control"] == control})
             means, errors = [], []
             for layer in layers:
-                selected = [row for row in summary if row["model_type"] == model_type
+                selected = [row for row in rows if row["model_type"] == model_type
                             and row["metric"] == metric and row["control"] == control
                             and row["layer"] == layer and row["position"] >= 30]
-                means.append(np.mean([row["mean"] for row in selected]))
-                errors.append(np.sqrt(np.mean([row["stderr"] ** 2 for row in selected])))
+                by_pool = defaultdict(list)
+                for row in selected: by_pool[row["pool_index"]].append(row["score"])
+                pool_means = np.asarray([np.mean(values) for values in by_pool.values()])
+                means.append(float(pool_means.mean()))
+                errors.append(float(pool_means.std(ddof=1) / np.sqrt(len(pool_means))))
             ax.errorbar(layers, means, yerr=errors, marker="o", capsize=3, label=label)
         raw = [row["mean"] for row in summary if row["model_type"] == "raw_input"
                and row["metric"] == metric and row["control"] == "actual" and row["position"] >= 30]
