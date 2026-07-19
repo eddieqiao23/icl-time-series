@@ -33,7 +33,7 @@ def main() -> None:
     fig, ax = plt.subplots(figsize=(7.5, 4.8))
     for T in sorted({row["T"] for row in rows}):
         layers = sorted({row["layer"] for row in rows if row["T"] == T})
-        means, errors = [], []
+        means = []
         for layer in layers:
             selected = [row for row in rows if row["T"] == T
                         and row["layer"] == layer and row["position"] >= 30]
@@ -42,10 +42,7 @@ def main() -> None:
                 by_pool[row["pool_index"]].append(row["score"])
             pool_means = np.asarray([np.mean(values) for values in by_pool.values()])
             means.append(float(pool_means.mean()))
-            errors.append(float(pool_means.std(ddof=1) / np.sqrt(len(pool_means)))
-                          if len(pool_means) > 1 else 0.0)
-        ax.errorbar(layers, means, yerr=errors, marker="o", capsize=3,
-                    label=f"T = {T}")
+        ax.plot(layers, means, marker="o", label=f"T = {T}")
 
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set(xlabel="Representation stage", ylabel="Coefficient probe R²")

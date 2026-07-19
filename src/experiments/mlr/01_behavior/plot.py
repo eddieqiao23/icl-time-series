@@ -41,11 +41,7 @@ def main() -> None:
             matrix = np.array([[mse for n, _, mse in values if n == position]
                                for position in positions])
             mean = matrix.mean(axis=1)
-            stderr = (matrix.std(axis=1, ddof=1) / np.sqrt(matrix.shape[1])
-                      if matrix.shape[1] > 1 else np.zeros_like(mean))
-            line, = ax.plot(positions, mean, label=f"T={T}")
-            ax.fill_between(positions, np.maximum(mean - stderr, 1e-8), mean + stderr,
-                            color=line.get_color(), alpha=0.18)
+            ax.plot(positions, mean, label=f"T={T}")
         ax.set(xlabel="Task position", ylabel="MSE",
                title=f"Transformer behavior (K={K}, noise={noise:g})")
         ax.set_yscale("log")
@@ -75,14 +71,8 @@ def main() -> None:
                 matrix = np.array([[mse for n, _, mse in values if n == position]
                                    for position in positions])
                 mean = matrix.mean(axis=1)
-                stderr = (matrix.std(axis=1, ddof=1) / np.sqrt(matrix.shape[1])
-                          if matrix.shape[1] > 1 else np.zeros_like(mean))
                 plotted = np.maximum(mean, 1e-6)
-                line, = ax.plot(positions, plotted, label=labels[method])
-                ax.fill_between(
-                    positions, np.maximum(mean - stderr, 1e-6),
-                    np.maximum(mean + stderr, 1e-6), color=line.get_color(), alpha=0.10,
-                )
+                ax.plot(positions, plotted, label=labels[method])
             ax.set_title(f"T={T}")
             ax.set_yscale("log")
             ax.xaxis.set_major_locator(MaxNLocator(integer=True))

@@ -27,3 +27,12 @@ attention by the number of available keys, retains layer/head/position detail,
 uses coefficient pools as the uncertainty unit, and repeats the identical
 analysis with an architecture-matched untrained model. `plot.py` produces
 layer, head, and coefficient-similarity summaries.
+
+`evaluate_t_sweep.py` isolates the trained `T = 2, 3, 4, 5` checkpoints and
+records the complete final-query attention distribution for each of 10 pools.
+For every previous task, its packed-input and output-token probabilities are
+summed into one task-level weight; run index 49 is the final query token's
+self-attention. `plot_t_sweep.py` averages prompts, four heads, and pools and
+renders the requested six-layer, four-model bar-chart grid without uncertainty
+bars. The four models all use `K = 2`, `N = 50`, noise `0.2`, and 500,000-step
+checkpoints; only the support count `T` changes.
