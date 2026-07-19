@@ -141,6 +141,8 @@ def main() -> None:
     parser.add_argument("--device", choices=["cpu", "cuda", "mps"], default=None)
     parser.add_argument("--append", action="store_true",
                         help="Replace the selected methods in an existing result CSV and preserve other methods.")
+    parser.add_argument("--force", action="store_true",
+                        help="With --append, recompute selected methods instead of resuming complete cells.")
     args = parser.parse_args()
 
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -153,17 +155,18 @@ def main() -> None:
             existing_rows = list(csv.DictReader(handle))
         base_rows = [row for row in existing_rows if row["method"] not in args.methods]
         selected_rows = [row for row in existing_rows if row["method"] in args.methods]
-        expected = args.num_pools * args.N
-        counts = {}
-        for row in selected_rows:
-            key = (int(row["T"]), int(row["K"]), float(row["noise_std"]), row["method"])
-            counts[key] = counts.get(key, 0) + 1
-        for T in args.T:
-            for K in args.K:
-                for noise in args.noise:
-                    if all(counts.get((T, K, noise, method), 0) == expected
-                           for method in args.methods):
-                        completed_conditions.add((T, K, noise))
+        if not args.force:
+            expected = args.num_pools * args.N
+            counts = {}
+            for row in selected_rows:
+                key = (int(row["T"]), int(row["K"]), float(row["noise_std"]), row["method"])
+                counts[key] = counts.get(key, 0) + 1
+            for T in args.T:
+                for K in args.K:
+                    for noise in args.noise:
+                        if all(counts.get((T, K, noise, method), 0) == expected
+                               for method in args.methods):
+                            completed_conditions.add((T, K, noise))
         rows = [row for row in selected_rows
                 if (int(row["T"]), int(row["K"]), float(row["noise_std"]))
                 in completed_conditions]
