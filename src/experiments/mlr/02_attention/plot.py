@@ -70,13 +70,13 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(7, 4.5))
     for model_type in ("trained", "untrained"):
-        means, errors = [], []
+        means = []
         layers = sorted({row["layer"] for row in pool_layer_rows})
         for layer in layers:
             values = [row["selectivity"] for row in pool_layer_rows
                       if row["model_type"] == model_type and row["layer"] == layer]
-            means.append(np.mean(values)); errors.append(np.std(values, ddof=1) / np.sqrt(len(values)))
-        ax.errorbar(layers, means, yerr=errors, marker="o", capsize=3, label=model_type.capitalize())
+            means.append(np.mean(values))
+        ax.plot(layers, means, marker="o", label=model_type.capitalize())
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set(xlabel="Layer", ylabel="Same-component attention selectivity")
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -136,16 +136,13 @@ def main() -> None:
     fig, axes = plt.subplots(3, 2, figsize=(10, 9), sharex=True, sharey=True)
     for layer, ax in zip(layers, axes.flat):
         for model_type in ("trained", "untrained"):
-            means, errors, tasks = [], [], []
+            means, tasks = [], []
             for key_task in sorted({row["key_task"] for row in profile_pool_rows}):
                 values = [row["attention"] for row in profile_pool_rows
                           if row["model_type"] == model_type and row["layer"] == layer
                           and row["key_task"] == key_task]
                 tasks.append(key_task); means.append(np.mean(values))
-                errors.append(np.std(values, ddof=1) / np.sqrt(len(values)))
-            line = ax.plot(tasks, means, label=model_type.capitalize())[0]
-            ax.fill_between(tasks, np.asarray(means) - errors,
-                            np.asarray(means) + errors, color=line.get_color(), alpha=0.15)
+            ax.plot(tasks, means, label=model_type.capitalize())
         ax.axvline(49, color="0.5", linewidth=0.8, linestyle="--")
         ax.set_title(f"Layer {layer}")
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -167,14 +164,11 @@ def main() -> None:
                       and not row["is_self"]]
         for field, label in (("same_attention", "Same component"),
                              ("different_attention", "Different component")):
-            means, errors, tasks = [], [], []
+            means, tasks = [], []
             for key_task in sorted({row["key_task"] for row in layer_rows}):
                 values = [row[field] for row in layer_rows if row["key_task"] == key_task]
                 tasks.append(key_task); means.append(np.mean(values))
-                errors.append(np.std(values, ddof=1) / np.sqrt(len(values)))
-            line = ax.plot(tasks, means, label=label)[0]
-            ax.fill_between(tasks, np.asarray(means) - errors,
-                            np.asarray(means) + errors, color=line.get_color(), alpha=0.15)
+            ax.plot(tasks, means, label=label)
         ax.set_title(f"Layer {layer}")
         ax.xaxis.set_major_locator(MaxNLocator(integer=True))
         ax.grid(True, alpha=0.25)
@@ -194,14 +188,11 @@ def main() -> None:
     fig, ax = plt.subplots(figsize=(8, 4.5))
     for field, label in (("input_attention", "Task input token"),
                          ("output_attention", "Task output token")):
-        tasks, means, errors = [], [], []
+        tasks, means = [], []
         for key_task in sorted({row["key_task"] for row in token_rows}):
             values = [row[field] for row in token_rows if row["key_task"] == key_task]
             tasks.append(key_task); means.append(np.mean(values))
-            errors.append(np.std(values, ddof=1) / np.sqrt(len(values)))
-        line = ax.plot(tasks, means, label=label)[0]
-        ax.fill_between(tasks, np.asarray(means) - errors,
-                        np.asarray(means) + errors, color=line.get_color(), alpha=0.15)
+        ax.plot(tasks, means, label=label)
     ax.set(xlabel="Previous task", ylabel="Attention probability")
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax.grid(True, alpha=0.25); ax.legend(); fig.tight_layout()

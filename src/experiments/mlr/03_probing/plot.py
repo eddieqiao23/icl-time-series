@@ -56,7 +56,7 @@ def main() -> None:
         ):
             layers = sorted({row["layer"] for row in summary if row["model_type"] == model_type
                              and row["metric"] == metric and row["control"] == control})
-            means, errors = [], []
+            means = []
             for layer in layers:
                 selected = [row for row in rows if row["model_type"] == model_type
                             and row["metric"] == metric and row["control"] == control
@@ -65,8 +65,7 @@ def main() -> None:
                 for row in selected: by_pool[row["pool_index"]].append(row["score"])
                 pool_means = np.asarray([np.mean(values) for values in by_pool.values()])
                 means.append(float(pool_means.mean()))
-                errors.append(float(pool_means.std(ddof=1) / np.sqrt(len(pool_means))))
-            ax.errorbar(layers, means, yerr=errors, marker="o", capsize=3, label=label)
+            ax.plot(layers, means, marker="o", label=label)
         raw = [row["mean"] for row in summary if row["model_type"] == "raw_input"
                and row["metric"] == metric and row["control"] == "actual" and row["position"] >= 30]
         ax.axhline(np.mean(raw), linestyle="--", label="Raw packed input")

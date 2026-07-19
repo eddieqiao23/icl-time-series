@@ -1,0 +1,114 @@
+{
+  "checkpoints": [
+    {
+      "D": 14,
+      "K": 2,
+      "N": 50,
+      "T": 2,
+      "checkpoint": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T2_K2_N50_noisy_500k/1ca5aca6-331a-48b7-aeb6-7718491bb39b/state.pt",
+      "checkpoint_readable": true,
+      "config_valid": true,
+      "d": 4,
+      "error": "",
+      "noise_std": 0.2,
+      "run_dir": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T2_K2_N50_noisy_500k/1ca5aca6-331a-48b7-aeb6-7718491bb39b",
+      "run_id": "1ca5aca6-331a-48b7-aeb6-7718491bb39b",
+      "run_name": "T2_K2_N50_noisy_500k",
+      "train_step": 500000
+    },
+    {
+      "D": 19,
+      "K": 2,
+      "N": 50,
+      "T": 3,
+      "checkpoint": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T3_K2_N50_noisy_500k/88f7ba1f-b831-4c58-818e-b589172895c7/state.pt",
+      "checkpoint_readable": true,
+      "config_valid": true,
+      "d": 4,
+      "error": "",
+      "noise_std": 0.2,
+      "run_dir": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T3_K2_N50_noisy_500k/88f7ba1f-b831-4c58-818e-b589172895c7",
+      "run_id": "88f7ba1f-b831-4c58-818e-b589172895c7",
+      "run_name": "T3_K2_N50_noisy_500k",
+      "train_step": 500000
+    },
+    {
+      "D": 24,
+      "K": 2,
+      "N": 50,
+      "T": 4,
+      "checkpoint": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T4_K2_N50_noisy_500k/960fc160-3d2a-48e7-b609-a2a82134760d/state.pt",
+      "checkpoint_readable": true,
+      "config_valid": true,
+      "d": 4,
+      "error": "",
+      "noise_std": 0.2,
+      "run_dir": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T4_K2_N50_noisy_500k/960fc160-3d2a-48e7-b609-a2a82134760d",
+      "run_id": "960fc160-3d2a-48e7-b609-a2a82134760d",
+      "run_name": "T4_K2_N50_noisy_500k",
+      "train_step": 500000
+    },
+    {
+      "D": 29,
+      "K": 2,
+      "N": 50,
+      "T": 5,
+      "checkpoint": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T5_K2_N50_noisy_500k/ad58ca77-6a59-4511-b354-f4a6114800c4/state.pt",
+      "checkpoint_readable": true,
+      "config_valid": true,
+      "d": 4,
+      "error": "",
+      "noise_std": 0.2,
+      "run_dir": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr/T5_K2_N50_noisy_500k/ad58ca77-6a59-4511-b354-f4a6114800c4",
+      "run_id": "ad58ca77-6a59-4511-b354-f4a6114800c4",
+      "run_name": "T5_K2_N50_noisy_500k",
+      "train_step": 500000
+    }
+  ],
+  "command": [
+    "src/experiments/mlr/02_attention/evaluate_t_sweep.py",
+    "--models-root",
+    "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr",
+    "--output-dir",
+    "src/experiments/mlr/02_attention/artifacts/t_sweep",
+    "--device",
+    "cpu"
+  ],
+  "created_at": "2026-07-19T05:11:02.725536+00:00",
+  "environment": {
+    "device": "mps",
+    "numpy": "1.26.4",
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "python": "3.11.15",
+    "torch": "2.11.0"
+  },
+  "experiment": "02_final_query_attention_t_sweep",
+  "git_commit": "daad7ef9a518c35d5d905d8fce81df54b990b2db",
+  "outputs": [
+    "src/experiments/mlr/02_attention/artifacts/t_sweep/final_query_attention_by_t.csv",
+    "src/experiments/mlr/02_attention/artifacts/t_sweep/run_manifest.json"
+  ],
+  "parameters": {
+    "K": 2,
+    "N": 50,
+    "T": [
+      2,
+      3,
+      4,
+      5
+    ],
+    "batch_size": 16,
+    "device": "cpu",
+    "models_root": "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr",
+    "noise": 0.2,
+    "num_pools": 10,
+    "num_prompts": 128,
+    "output_dir": "src/experiments/mlr/02_attention/artifacts/t_sweep",
+    "seed": 31000
+  },
+  "schema_version": 1,
+  "seeds": {
+    "base_seed": 31000,
+    "pool_offset": 10000
+  }
+}

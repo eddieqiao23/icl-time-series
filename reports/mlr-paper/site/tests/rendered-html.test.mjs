@@ -18,11 +18,13 @@ test("renders the complete MLR report", async () => {
   assert.match(html, /Causal tests/);
   assert.match(html, /Algorithm identification/);
   assert.match(html, /Previous setup/);
-  assert.match(html, /final input token is position 98/i);
+  assert.match(html, /sequence position 98/i);
+  assert.match(html, /Donor construction/);
+  assert.match(html, /Which checkpoints feed each result/);
   assert.match(html, /0\.861/);
   assert.doesNotMatch(html, /Your site is taking shape|SkeletonPreview/);
 });
 test("ships every referenced result figure", async () => {
-  const figures = ["behavior-k3-noisy.png","attention-by-layer.png","final-query-attention-by-task.png","final-query-attention-by-relation.png","probe-beta-by-t.png","context-ablation.png","support-ablation.png","ood-imbalance.png","ood-components.png"];
+  const figures = ["behavior-k3-noisy.png","attention-by-t.png","probe-beta-by-t.png","context-ablation.png","support-ablation.png","ood-imbalance.png","ood-components.png"];
   await Promise.all(figures.map(name => access(new URL(`public/results/${name}`, root))));
 });

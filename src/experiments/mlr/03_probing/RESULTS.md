@@ -53,5 +53,6 @@ All four checkpoints develop a linearly decodable coefficient representation.
 The `T = 5` model is strongest and reaches 0.929 at stage 5, while `T = 2`
 develops substantially later. The ordering is not monotonic in support count:
 the `T = 4` checkpoint falls below `T = 3` in the late stages. Error bars in
-`beta_r2_by_t.png` are standard errors across 10 coefficient pools after
-averaging positions 30, 40, and 49 within each pool.
+`beta_r2_by_t.png` shows pool means after averaging positions 30, 40, and 49
+within each pool. Uncertainty bars are omitted while their calculation is
+audited; the underlying pool-level scores remain saved.
