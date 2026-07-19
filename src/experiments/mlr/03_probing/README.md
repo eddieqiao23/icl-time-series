@@ -25,3 +25,8 @@ coefficient and logistic probes decode component identity. Four-fold splits are
 grouped by prompt, and the same pipeline is repeated for shuffled labels,
 untrained weights, and the raw packed input. Scores remain pool-level before
 aggregation.
+
+`evaluate_t_sweep.py` runs the actual-label coefficient probe for the trained
+`T = 2, 3, 4, 5` checkpoints under the same pools, positions, and prompt-grouped
+cross-validation. It intentionally omits untrained, shuffled-label, and raw
+input series so `plot_t_sweep.py` can compare the trained models directly.
