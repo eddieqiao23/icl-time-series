@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import TokenExplorer from "./components/TokenExplorer";
 
 export const metadata: Metadata = {
   title: "How Transformers Solve Mixtures of Linear Regressions",
@@ -44,12 +45,7 @@ export default function Home() {
           <p className="section-number">01 / Setup</p><h2 id="setup-title">One sequence, several hidden regressions</h2>
           <p>Each prompt is a sequence of tasks sampled from latent linear models. Every task input packs T labeled support pairs and a held-out query <em>x</em>; its following output token contains the query label. Solving the task requires combining current-task support with matching historical tasks rather than averaging indiscriminately.</p>
         </div>
-        <div className="method-diagram" role="img" aria-label="Packed prompt with observations from two latent regression components leading to a query prediction">
-          <p className="packed-key">task input = (x₁,y₁) … (x<sub>T</sub>,y<sub>T</sub>), x<sub>query</sub></p>
-          <div className="sequence-row"><span className="token component-a">task 1 · A</span><span className="output-token">y₁</span><span className="token component-b">task 2 · B</span><span className="output-token">y₂</span><span className="ellipsis">…</span><span className="token query">task N · A</span></div>
-          <div className="routing-row"><span>latent component A</span><i></i><span>route matching evidence</span><i></i><span>ŷ?</span></div>
-          <p className="legend"><span className="dot a"></span> component A <span className="dot b"></span> component B</p>
-        </div>
+        <TokenExplorer />
       </section>
 
       <section id="evidence" className="section-block" aria-labelledby="evidence-title">
@@ -62,6 +58,13 @@ export default function Home() {
           <div className="result-copy"><p className="result-label">Attention</p><h3>Later layers preferentially retrieve the query’s component.</h3><p>Same-component attention selectivity rises sharply through the network and reaches <strong>0.496</strong> in layer 5. An architecture-matched untrained control stays near zero. The learned attention pattern is therefore aligned with the latent partition the task demands.</p><a href={links.attention}>Attention results →</a></div>
           <Figure src="/results/attention-by-layer.png" alt="Same-component attention selectivity by transformer layer for trained and untrained models" caption="Figure 2. Query attention to same- versus different-component examples, aggregated across 10 independent prompt pools." />
         </article>
+        <div className="attention-detail">
+          <div><p className="result-label">Final-token profile</p><h3>The last query develops both component selectivity and a recency gradient.</h3><p>The final input token is position 98. In layer 5 it assigns 0.0297 average task-level attention to a prior task when that task shares the active component, versus 0.0102 when it does not. Attention also rises from 0.0112 across tasks 0–9 to 0.0251 across tasks 40–48, so position and component identity jointly shape retrieval. The plots show softmax attention probabilities, not causal effects.</p></div>
+          <div className="figure-grid">
+            <Figure src="/results/final-query-attention-by-task.png" alt="Attention from the final query token to each prior task and itself, faceted by layer for trained and untrained models" caption="Figure 2a. Absolute attention from the final query input to each task. The dashed line marks self-attention at task 49; bands show one standard error across coefficient pools." />
+            <Figure src="/results/final-query-attention-by-relation.png" alt="Conditional attention from the final query token to same-component and different-component prior tasks, faceted by layer" caption="Figure 2b. Conditional task-level attention reveals learned component routing in late layers while preserving a positional gradient." />
+          </div>
+        </div>
         <article className="result-row">
             <div className="result-copy"><p className="result-label">Representation</p><h3>A linear readout recovers the active regression.</h3><p>A held-out linear probe’s β R² climbs from below zero at the embedding to <strong>0.861</strong> at stage 5; component classification reaches <strong>96.8%</strong>. Raw-linear and untrained controls are null, while prompt-grouped cross-validation prevents fold leakage. Because the packed query contains current-task support pairs, this establishes information availability—not whether it was computed locally or retrieved from history.</p><a href={links.probing}>Probe results →</a></div>
           <Figure src="/results/probe-beta.png" alt="Linear-probe beta coefficient R squared by network stage for trained and control representations" caption="Figure 3. Decodability of the active regression coefficients across the residual stream." />

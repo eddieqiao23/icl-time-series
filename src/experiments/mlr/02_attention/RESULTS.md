@@ -29,3 +29,41 @@ small negative mean before the strong late-layer increase.
 
 This establishes component-selective routing, not causal necessity. Experiment
 04 tests whether the selected context and heads affect prediction error.
+
+## Final-query attention profile
+
+The evaluation also preserves the full attention distribution from the final
+query input token (task 49, token position 98) to every visible task. For prior
+tasks, the input- and output-token probabilities are summed into a single
+task-level probability. The current query's self-attention is reported
+separately. Values below average heads and coefficient pools.
+
+| Layer | Prior-task attention | Self-attention | Same component | Different component |
+|---:|---:|---:|---:|---:|
+| 0 | 0.0177 | 0.1334 | 0.0179 | 0.0175 |
+| 1 | 0.0186 | 0.0909 | 0.0197 | 0.0174 |
+| 2 | 0.0144 | 0.2923 | 0.0141 | 0.0148 |
+| 3 | 0.0196 | 0.0374 | 0.0218 | 0.0175 |
+| 4 | 0.0200 | 0.0182 | 0.0232 | 0.0168 |
+| 5 | 0.0200 | 0.0217 | 0.0297 | 0.0102 |
+
+Layer 5 therefore allocates about 2.9 times as much probability to a given
+same-component prior task as to a given different-component task. The total
+average per prior task remains near the uniform task-level reference of 0.0202
+because the component preference redistributes rather than creates attention.
+The untrained model remains essentially uniform at 0.0202 per prior task.
+
+There is also a learned positional gradient. In layer 5, trained-model
+attention averages 0.0112 over tasks 0–9 and 0.0251 over tasks 40–48. The
+component-conditioned plot shows that relation and recency coexist rather than
+one explaining the other. At the same layer, the average prior-task probability
+splits into 0.0106 on the packed input token and 0.0094 on its output token.
+
+`final_query_attention_by_task.png` shows the absolute trained and untrained
+profile at every layer. `final_query_attention_by_relation.png` conditions each
+prior position on whether it matches the final task's component, and
+`final_query_attention_by_token_type.png` separates packed input from output
+tokens in the final layer. Bands are standard errors across the 10 coefficient
+pools after averaging heads within each pool. These profiles are descriptive;
+they do not by themselves show that a high-attention task causally changes the
+prediction.
