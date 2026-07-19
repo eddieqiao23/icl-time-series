@@ -36,8 +36,9 @@ def write_csv(rows: list[dict], path: Path) -> None:
 def pool_metrics(model, *, pool: torch.Tensor, pool_index: int, model_type: str,
                  T: int, N: int, noise_std: float, num_prompts: int,
                  batch_size: int, source_positions: list[int], seed: int,
-                 device: torch.device) -> list[dict]:
+                 device: torch.device) -> tuple[list[dict], list[dict]]:
     accumulators = {}
+    profile_accumulators = {}
     for start in range(0, num_prompts, batch_size):
         size = min(batch_size, num_prompts - start)
         xs, ys, ids = sample_with_pool(
@@ -79,6 +80,47 @@ def pool_metrics(model, *, pool: torch.Tensor, pool_index: int, model_type: str,
                     acc["token_count"] += int(size * position)
                     acc["self_sum"] += float(attention[:, head, source, source].sum().item())
                     acc["prompt_count"] += size
+
+            # Preserve the absolute final-query profile instead of reducing it
+            # immediately to a selectivity score. Input/output weights are
+            # summed to one task-level value for every previous task.
+            target_position = N - 1
+            source = 2 * target_position
+            input_attention = attention[:, :, source, 0:source:2]
+            output_attention = attention[:, :, source, 1:source:2]
+            same_task = ids[:, :target_position] == ids[:, target_position, None]
+            for head in range(heads):
+                for key_task in range(target_position):
+                    key = (layer, head, key_task)
+                    acc = profile_accumulators.setdefault(key, {
+                        "total_sum": 0.0, "input_sum": 0.0, "output_sum": 0.0,
+                        "same_sum": 0.0, "same_count": 0,
+                        "different_sum": 0.0, "different_count": 0,
+                        "prompt_count": 0,
+                    })
+                    values = input_attention[:, head, key_task] + output_attention[:, head, key_task]
+                    same = same_task[:, key_task]
+                    different = ~same
+                    acc["total_sum"] += float(values.sum().item())
+                    acc["input_sum"] += float(input_attention[:, head, key_task].sum().item())
+                    acc["output_sum"] += float(output_attention[:, head, key_task].sum().item())
+                    acc["same_sum"] += float(values[same].sum().item())
+                    acc["same_count"] += int(same.sum().item())
+                    acc["different_sum"] += float(values[different].sum().item())
+                    acc["different_count"] += int(different.sum().item())
+                    acc["prompt_count"] += size
+
+                self_key = (layer, head, target_position)
+                self_acc = profile_accumulators.setdefault(self_key, {
+                    "total_sum": 0.0, "input_sum": 0.0, "output_sum": 0.0,
+                    "same_sum": 0.0, "same_count": 0,
+                    "different_sum": 0.0, "different_count": 0,
+                    "prompt_count": 0,
+                })
+                self_values = attention[:, head, source, source]
+                self_acc["total_sum"] += float(self_values.sum().item())
+                self_acc["input_sum"] += float(self_values.sum().item())
+                self_acc["prompt_count"] += size
         del outputs
 
     cosine = float(torch.dot(pool[0], pool[1]).item()) if len(pool) == 2 else np.nan
@@ -97,7 +139,25 @@ def pool_metrics(model, *, pool: torch.Tensor, pool_index: int, model_type: str,
             "self_attention": acc["self_sum"] / acc["prompt_count"],
             "num_prompts": num_prompts,
         })
-    return rows
+    profile_rows = []
+    for (layer, head, key_task), acc in sorted(profile_accumulators.items()):
+        profile_rows.append({
+            "model_type": model_type, "pool_index": pool_index,
+            "pool_cosine": cosine, "layer": layer, "head": head,
+            "source_task": N - 1, "key_task": key_task,
+            "is_self": key_task == N - 1,
+            "attention": acc["total_sum"] / acc["prompt_count"],
+            "input_attention": acc["input_sum"] / acc["prompt_count"],
+            "output_attention": acc["output_sum"] / acc["prompt_count"],
+            "same_attention": (acc["same_sum"] / acc["same_count"]
+                               if acc["same_count"] else ""),
+            "different_attention": (acc["different_sum"] / acc["different_count"]
+                                    if acc["different_count"] else ""),
+            "same_count": acc["same_count"],
+            "different_count": acc["different_count"],
+            "num_prompts": num_prompts,
+        })
+    return rows, profile_rows
 
 
 def main() -> None:
@@ -123,6 +183,7 @@ def main() -> None:
     )
     random_model = untrained_control(config, device, seed=args.seed + 999)
     rows = []
+    profile_rows = []
     args.output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = args.output_dir / "attention_by_head.csv"
     started = time.monotonic()
@@ -130,14 +191,17 @@ def main() -> None:
         for pool_index in range(args.num_pools):
             pool_started = time.monotonic()
             pool = normalized_pool(args.K, 4, args.seed + 10_000 + pool_index)
-            rows.extend(pool_metrics(
+            pool_rows, pool_profiles = pool_metrics(
                 model, pool=pool, pool_index=pool_index, model_type=model_type,
                 T=args.T, N=args.N, noise_std=args.noise,
                 num_prompts=args.num_prompts, batch_size=args.batch_size,
                 source_positions=args.positions, seed=args.seed + pool_index * 1_000,
                 device=device,
-            ))
+            )
+            rows.extend(pool_rows)
+            profile_rows.extend(pool_profiles)
             write_csv(rows, csv_path)
+            write_csv(profile_rows, args.output_dir / "final_query_attention_by_task.csv")
             completed = (0 if model_type == "trained" else args.num_pools) + pool_index + 1
             remaining = 2 * args.num_pools - completed
             rate = (time.monotonic() - started) / completed
@@ -154,10 +218,12 @@ def main() -> None:
         checkpoints=[asdict(record)],
         seeds={"base_seed": args.seed, "pool_offset": 10_000,
                "untrained_model_seed": args.seed + 999},
-        outputs=[str(csv_path), str(manifest_path)],
+        outputs=[str(csv_path),
+                 str(args.output_dir / "final_query_attention_by_task.csv"),
+                 str(manifest_path)],
     )
     write_json(manifest, manifest_path)
-    print(f"Wrote {len(rows)} rows to {csv_path}")
+    print(f"Wrote {len(rows)} selectivity rows and {len(profile_rows)} profile rows")
 
 
 if __name__ == "__main__":
