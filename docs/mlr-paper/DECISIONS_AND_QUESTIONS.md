@@ -26,6 +26,15 @@ Runs are designed to complete in minutes to low tens of minutes on the local
 CPU. Large tensors are reduced batch-by-batch, and long-running scripts write
 atomic per-condition checkpoints with timing estimates.
 
+### Comparison with the previous AR setup
+
+The comparison is mechanistic and qualitative where the observation models
+differ. Absolute MSE is not treated as a controlled head-to-head metric: the
+AR target run contains within-run observations and can self-fit, while the MLR
+query withholds its label and must use historical support. A matched-format
+comparison would require a follow-up checkpoint, but no additional training is
+needed for the completed paper suite.
+
 ## Questions for later review
 
 1. Should the final paper include a second mechanistic checkpoint (`K=3`) as a

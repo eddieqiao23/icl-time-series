@@ -21,10 +21,12 @@
     "src/experiments/mlr/05_ood/evaluate.py",
     "--models-root",
     "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr",
+    "--output-dir",
+    "src/experiments/mlr/05_ood/artifacts/summaries",
     "--device",
     "cpu"
   ],
-  "created_at": "2026-07-18T23:31:41.429835+00:00",
+  "created_at": "2026-07-19T00:00:47.516826+00:00",
   "environment": {
     "device": "mps",
     "numpy": "1.26.4",
@@ -33,10 +35,10 @@
     "torch": "2.11.0"
   },
   "experiment": "05_ood_algorithm_identification",
-  "git_commit": "732c75ac0ca7412164215d9bcbaf933f67655ea9",
+  "git_commit": "75c59d2d713c40a495c6314a3b2ea840736c777d",
   "outputs": [
-    "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/05_ood/artifacts/summaries/ood_results.csv",
-    "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/05_ood/artifacts/summaries/run_manifest.json"
+    "src/experiments/mlr/05_ood/artifacts/summaries/ood_results.csv",
+    "src/experiments/mlr/05_ood/artifacts/summaries/run_manifest.json"
   ],
   "parameters": {
     "N": 50,
@@ -52,7 +54,7 @@
     "noise": 0.2,
     "num_pools": 10,
     "num_prompts": 128,
-    "output_dir": "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/05_ood/artifacts/summaries",
+    "output_dir": "src/experiments/mlr/05_ood/artifacts/summaries",
     "seed": 71000
   },
   "schema_version": 1,

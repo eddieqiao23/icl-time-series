@@ -19,10 +19,12 @@ strong out-of-distribution artifacts.
 ## Implemented interventions
 
 - per-head masking at every layer, repeated over coefficient pools;
-- mean replacement of matched, mismatched, or all prior task tokens;
-- mean replacement of each packed support block or every support block;
+- independent same-position donor replacement of matched, mismatched, random
+  count-matched, or all prior task-token pairs;
+- independent donor replacement of each packed support block or every support
+  block;
 - clean-to-corrupted residual patching at the prediction token by layer.
 
-Mean replacement is used for task and support tokens to avoid interpreting a
-large zero-vector distribution shift as evidence of necessity. Head masking is
-the conventional zero-mask intervention and is labeled separately.
+Donor replacement preserves the marginal task-token format without using any
+future or target values from the recipient prompt. Head masking is the
+conventional zero-mask intervention and is labeled separately.

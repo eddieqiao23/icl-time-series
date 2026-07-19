@@ -28,7 +28,9 @@ p { line-height:1.65; }
 .setup > div:first-child > p:last-child { color:var(--muted); font-size:16px; }
 .method-diagram { background:var(--panel); border:1px solid var(--rule); padding:44px; box-shadow:0 18px 60px rgba(23,33,28,.06); }
 .sequence-row { display:flex; align-items:center; gap:12px; }
+.packed-key { margin:0 0 20px; color:var(--muted); font-family:var(--font-geist-mono),monospace; font-size:11px; }
 .token { padding:14px 16px; border-radius:3px; font-family:var(--font-geist-mono),monospace; font-size:14px; }
+.output-token { color:var(--muted); font-family:var(--font-geist-mono),monospace; font-size:12px; }
 .component-a { background:var(--sage); color:#184936; }
 .component-b { background:#eadfd8; color:#743c29; }
 .query { border:1px dashed var(--green); background:white; }
@@ -59,6 +61,12 @@ figcaption { margin-top:12px; color:var(--muted); font-size:12px; line-height:1.
 .causal-section .section-link { display:inline-block; margin-top:32px; color:#c4e4cc; }
 .wide-copy { max-width:780px; color:var(--muted); font-size:17px; }
 .limits .section-link { display:inline-block; margin-top:32px; }
+.comparison { background:var(--sage); width:100%; max-width:none; padding-inline:max(24px,calc((100% - 1180px) / 2)); }
+.comparison-table { margin:52px 0 34px; border-top:1px solid #aebfaf; }
+.comparison-table > div { display:grid; grid-template-columns:.55fr 1fr 1fr; gap:28px; padding:22px 0; border-bottom:1px solid #aebfaf; }
+.comparison-table span { color:#405248; font-size:14px; line-height:1.55; }
+.comparison-head span { color:var(--green); font-family:var(--font-geist-mono),monospace; font-size:11px; letter-spacing:.06em; text-transform:uppercase; }
+.comparison-takeaway { max-width:820px; margin:38px 0 24px; font-size:18px; }
 .conclusion { padding-bottom:80px; }
 .synthesis-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; margin:54px 0; background:var(--rule); border:1px solid var(--rule); }
 .synthesis-grid > div { background:var(--panel); padding:34px; }
@@ -67,6 +75,7 @@ figcaption { margin-top:12px; color:var(--muted); font-size:12px; line-height:1.
 .caveat { max-width:800px; margin-top:60px; padding-left:24px; border-left:3px solid var(--rust); }
 .caveat h3 { font-size:18px; }
 .caveat p { color:var(--muted); font-size:14px; }
+.link-separator { margin:0 10px; color:var(--muted); }
 footer { display:flex; justify-content:space-between; padding:28px 0 44px; border-top:1px solid var(--rule); color:var(--muted); font-size:12px; }
 @media (max-width:800px) {
   nav,section,header,footer { width:min(100% - 28px,1180px); }
@@ -81,6 +90,9 @@ footer { display:flex; justify-content:space-between; padding:28px 0 44px; borde
   .method-diagram { padding:24px; overflow-x:auto; }
   .sequence-row,.routing-row { min-width:430px; }
   .causal-section { width:100%; padding-inline:14px; }
+  .comparison { width:100%; padding-inline:14px; }
+  .comparison-table > div { grid-template-columns:1fr; gap:8px; }
+  .comparison-head { display:none !important; }
   footer { gap:16px; }
 }
 @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }

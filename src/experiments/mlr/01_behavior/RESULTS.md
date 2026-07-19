@@ -16,17 +16,17 @@ training states, including the five declared early-stopping completions.
 | 2 | 0.0 | 3 | 0.0044 | 0.0000 | 0.0000 |
 | 2 | 0.0 | 4 | 0.0027 | 0.0000 | 0.0000 |
 | 2 | 0.0 | 5 | 0.0012 | 0.0000 | 0.0000 |
-| 2 | 0.2 | 2 | 0.0879 | 0.0640 | 0.0709 |
-| 2 | 0.2 | 3 | 0.0570 | 0.0469 | 0.0498 |
-| 2 | 0.2 | 4 | 0.0525 | 0.0440 | 0.0459 |
+| 2 | 0.2 | 2 | 0.0879 | 0.0640 | 0.0716 |
+| 2 | 0.2 | 3 | 0.0570 | 0.0469 | 0.0500 |
+| 2 | 0.2 | 4 | 0.0525 | 0.0440 | 0.0461 |
 | 2 | 0.2 | 5 | 0.0452 | 0.0415 | 0.0433 |
 | 3 | 0.0 | 2 | 0.0498 | 0.0000 | 0.0002 |
 | 3 | 0.0 | 3 | 0.0059 | 0.0000 | 0.0001 |
 | 3 | 0.0 | 4 | 0.0058 | 0.0000 | 0.0000 |
 | 3 | 0.0 | 5 | 0.0024 | 0.0000 | 0.0000 |
-| 3 | 0.2 | 2 | 0.1764 | 0.0913 | 0.1071 |
-| 3 | 0.2 | 3 | 0.0949 | 0.0523 | 0.0575 |
-| 3 | 0.2 | 4 | 0.0572 | 0.0454 | 0.0494 |
+| 3 | 0.2 | 2 | 0.1764 | 0.0913 | 0.1085 |
+| 3 | 0.2 | 3 | 0.0949 | 0.0523 | 0.0580 |
+| 3 | 0.2 | 4 | 0.0572 | 0.0454 | 0.0495 |
 | 3 | 0.2 | 5 | 0.0528 | 0.0427 | 0.0452 |
 
 Exact standard errors and 95% confidence intervals are in
@@ -42,8 +42,8 @@ Exact standard errors and 95% confidence intervals are in
    noisy `K=3`, where late-context MSE falls from 0.1764 at `T=2` to 0.0528 at
    `T=5`.
 3. Mixture complexity matters most when the current task is weakly identified.
-   The largest transformer-oracle gap is at `K=3, T=2`; it narrows sharply as
-   `T` increases.
+   The largest transformer–known-pool gap is at `K=3, T=2`; it narrows sharply
+   as `T` increases.
 4. History ridge is not a suitable mixture learner. Pooling prior tasks into a
    single regressor stays far above the transformer because it averages
    incompatible components. EM ridge instead learns the component pool and

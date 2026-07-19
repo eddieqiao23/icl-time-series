@@ -17,10 +17,11 @@ test("renders the complete MLR report", async () => {
   assert.match(html, /Converging evidence/);
   assert.match(html, /Causal tests/);
   assert.match(html, /Algorithm identification/);
+  assert.match(html, /Previous setup/);
   assert.match(html, /0\.861/);
   assert.doesNotMatch(html, /Your site is taking shape|SkeletonPreview/);
 });
 test("ships every referenced result figure", async () => {
-  const figures = ["behavior-k3-noisy.png","attention-by-layer.png","probe-beta.png","context-ablation.png","activation-patching.png","ood-imbalance.png","ood-components.png"];
+  const figures = ["behavior-k3-noisy.png","attention-by-layer.png","probe-beta.png","context-ablation.png","support-ablation.png","ood-imbalance.png","ood-components.png"];
   await Promise.all(figures.map(name => access(new URL(`public/results/${name}`, root))));
 });

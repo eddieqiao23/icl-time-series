@@ -21,10 +21,12 @@
     "src/experiments/mlr/03_probing/evaluate.py",
     "--models-root",
     "/Users/eqiao/Documents/mit/fall-2025/urop/in-context-learning/models/mlr",
+    "--output-dir",
+    "src/experiments/mlr/03_probing/artifacts/summaries",
     "--device",
     "cpu"
   ],
-  "created_at": "2026-07-18T23:16:07.367118+00:00",
+  "created_at": "2026-07-19T00:08:09.299632+00:00",
   "environment": {
     "device": "mps",
     "numpy": "1.26.4",
@@ -33,10 +35,10 @@
     "torch": "2.11.0"
   },
   "experiment": "03_grouped_representation_probes",
-  "git_commit": "732c75ac0ca7412164215d9bcbaf933f67655ea9",
+  "git_commit": "90382b06c9863076360d66b62865e01720bb528e",
   "outputs": [
-    "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/03_probing/artifacts/summaries/probe_scores.csv",
-    "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/03_probing/artifacts/summaries/run_manifest.json"
+    "src/experiments/mlr/03_probing/artifacts/summaries/probe_scores.csv",
+    "src/experiments/mlr/03_probing/artifacts/summaries/run_manifest.json"
   ],
   "parameters": {
     "K": 2,
@@ -49,7 +51,7 @@
     "noise": 0.2,
     "num_pools": 10,
     "num_prompts": 128,
-    "output_dir": "/private/tmp/icl-mlr-paper-clean/src/experiments/mlr/03_probing/artifacts/summaries",
+    "output_dir": "src/experiments/mlr/03_probing/artifacts/summaries",
     "positions": [
       5,
       10,

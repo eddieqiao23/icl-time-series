@@ -46,6 +46,8 @@ Experiment code lives under `src/experiments/mlr/`:
 
 The final one-page results report lives under `reports/mlr-paper/` and reads
 curated summaries and publication figures from the experiment directories.
+The setup comparison is in `AR_VS_MLR_COMPARISON.md`; the independent
+leakage/control review and its dispositions are in `INDEPENDENT_AUDIT.md`.
 
 ## Artifact policy
 
