@@ -74,7 +74,7 @@
     "--device",
     "cpu"
   ],
-  "created_at": "2026-07-19T05:11:02.725536+00:00",
+  "created_at": "2026-07-19T05:28:23.104137+00:00",
   "environment": {
     "device": "mps",
     "numpy": "1.26.4",
@@ -83,9 +83,10 @@
     "torch": "2.11.0"
   },
   "experiment": "02_final_query_attention_t_sweep",
-  "git_commit": "daad7ef9a518c35d5d905d8fce81df54b990b2db",
+  "git_commit": "ae93a7688db763116900ccaf2d505238d3ae1d07",
   "outputs": [
     "src/experiments/mlr/02_attention/artifacts/t_sweep/final_query_attention_by_t.csv",
+    "src/experiments/mlr/02_attention/artifacts/t_sweep/component_routing_by_t.csv",
     "src/experiments/mlr/02_attention/artifacts/t_sweep/run_manifest.json"
   ],
   "parameters": {

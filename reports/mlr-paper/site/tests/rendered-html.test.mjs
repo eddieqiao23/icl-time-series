@@ -21,6 +21,7 @@ test("renders the complete MLR report", async () => {
   assert.match(html, /sequence position 98/i);
   assert.match(html, /Donor construction/);
   assert.match(html, /Which checkpoints feed each result/);
+  assert.match(html, /6\.35/);
   assert.match(html, /0\.861/);
   assert.doesNotMatch(html, /Your site is taking shape|SkeletonPreview/);
 });

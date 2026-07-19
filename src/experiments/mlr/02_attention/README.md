@@ -36,3 +36,12 @@ self-attention. `plot_t_sweep.py` averages prompts, four heads, and pools and
 renders the requested six-layer, four-model bar-chart grid without uncertainty
 bars. The four models all use `K = 2`, `N = 50`, noise `0.2`, and 500,000-step
 checkpoints; only the support count `T` changes.
+
+The sweep also writes `component_routing_by_t.csv`. For every prompt, head, and
+layer, previous tasks are partitioned by whether their latent component matches
+the final query's component. Input- and output-token attention is summed within
+each task, then divided by the number of task observations in that relation.
+The reported routing ratio is `mean attention per same-component task / mean
+attention per different-component task`; self-attention at run 49 is excluded.
+`plot_t_sweep.py` averages the two attention values across pools before taking
+their ratio and writes `component_routing_summary.csv`.

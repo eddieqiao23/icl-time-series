@@ -3,6 +3,7 @@
 
 import argparse
 import csv
+from collections import defaultdict
 from pathlib import Path
 
 import matplotlib
@@ -20,6 +21,10 @@ def main() -> None:
                         default=HERE / "artifacts" / "t_sweep" / "final_query_attention_by_t.csv")
     parser.add_argument("--output", type=Path,
                         default=HERE / "figures" / "final_query_attention_by_t.png")
+    parser.add_argument("--routing-input", type=Path,
+                        default=HERE / "artifacts" / "t_sweep" / "component_routing_by_t.csv")
+    parser.add_argument("--routing-summary", type=Path,
+                        default=HERE / "artifacts" / "t_sweep" / "component_routing_summary.csv")
     args = parser.parse_args()
 
     with args.input.open() as handle:
@@ -28,6 +33,29 @@ def main() -> None:
         for field in ("T", "layer", "key_task", "pool_index"):
             row[field] = int(row[field])
         row["attention"] = float(row["attention"])
+
+    with args.routing_input.open() as handle:
+        routing_rows = list(csv.DictReader(handle))
+    grouped = defaultdict(list)
+    for row in routing_rows:
+        grouped[(int(row["T"]), int(row["layer"]))].append(row)
+    routing_summary = []
+    for (T, layer), values in sorted(grouped.items()):
+        same = float(np.mean([float(row["same_attention"]) for row in values]))
+        different = float(np.mean([float(row["different_attention"]) for row in values]))
+        routing_summary.append({
+            "T": T, "layer": layer,
+            "same_attention": same,
+            "different_attention": different,
+            "same_to_different_ratio": same / different,
+            "selectivity": (same - different) / (same + different),
+            "num_pools": len(values),
+        })
+    with args.routing_summary.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(routing_summary[0]),
+                                lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(routing_summary)
 
     layers = sorted({row["layer"] for row in rows})
     support_counts = sorted({row["T"] for row in rows})
@@ -59,7 +87,7 @@ def main() -> None:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.output, dpi=200)
     plt.close(fig)
-    print(f"Wrote {args.output}")
+    print(f"Wrote {args.output} and {args.routing_summary}")
 
 
 if __name__ == "__main__":

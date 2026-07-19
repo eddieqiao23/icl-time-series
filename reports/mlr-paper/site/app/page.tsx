@@ -66,6 +66,21 @@ export default function Home() {
         <div className="attention-detail">
           <div><p className="result-label">Attention</p><h3>The final query’s retrieval pattern changes by layer and support count.</h3><p>Each panel uses a trained K = 2 model. T varies from 2 to 5. The source is the final task’s packed input token at sequence position 98. For runs 0–48, each bar sums attention to that run’s packed-input and output tokens; run 49 is self-attention to the source token. Bars average 128 prompts, four heads, and 10 coefficient pools. The four T panels share a y-scale within each layer, while different layers use different scales so their structure remains visible.</p><p>Large self-attention peaks appear in the early and middle layers of several checkpoints, especially T = 3 and T = 4. Later layers generally shift probability toward recent history. In the canonical T = 3 model, the component-conditioned analysis still finds 0.0297 attention per same-component task versus 0.0102 per different-component task in layer 6. These probabilities describe routing; they are not causal-effect estimates.</p><a href={links.attention}>Attention methodology and tables →</a></div>
           <Figure src="/results/attention-by-t.png" alt="Six-layer grid of bar charts showing final-query attention weight by run index for trained models with two through five support pairs" caption="Figure 2. Final-query task-level attention for layers 1–6. Each layer contains T = 2, 3, 4, and 5 trained-model panels; no untrained panels or uncertainty bars are shown." />
+          <div className="routing-analysis">
+            <div><p className="result-label">Component routing ratio</p><h3>Component selectivity appears at different depths for different T.</h3><p>Each cell is mean attention per same-component prior task divided by mean attention per different-component prior task. Run 49 self-attention is excluded. A value of 1 means no preference. Attention is averaged across prompts, heads, and pools before the ratio is taken.</p></div>
+            <div className="routing-table-wrap">
+              <table className="routing-table">
+                <thead><tr><th>T</th><th>Layer 1</th><th>Layer 2</th><th>Layer 3</th><th>Layer 4</th><th>Layer 5</th><th>Layer 6</th></tr></thead>
+                <tbody>
+                  <tr><th>2</th><td>1.00</td><td>1.02</td><td>1.00</td><td>1.56</td><td>1.04</td><td>1.04</td></tr>
+                  <tr><th>3</th><td>1.02</td><td>1.13</td><td>0.94</td><td>1.24</td><td>1.38</td><td className="routing-high">2.90</td></tr>
+                  <tr><th>4</th><td>1.04</td><td>1.00</td><td>1.03</td><td className="routing-high">2.15</td><td>1.17</td><td>1.19</td></tr>
+                  <tr><th>5</th><td>1.02</td><td>1.03</td><td>1.43</td><td className="routing-high">3.67</td><td className="routing-high">6.35</td><td className="routing-high">2.27</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="routing-reading">T = 3 develops its strongest preference only in layer 6. T = 4 peaks transiently in layer 4. T = 5 becomes selective earlier and peaks in layer 5, where matching tasks receive 0.03425 attention each versus 0.00540 for mismatching tasks. T = 2 remains mostly component-neutral. The non-monotonic trajectories suggest that component-based routing can be an intermediate computation that later layers partially integrate or redistribute.</p>
+          </div>
         </div>
         <article className="result-row">
             <div className="result-copy"><p className="result-label">Representation</p><h3>A linear readout recovers the active regression across support counts.</h3><p>Prompt-grouped coefficient probes rise through the residual stream for every trained checkpoint. At stage 5, β R² is <strong>0.802</strong>, <strong>0.861</strong>, <strong>0.760</strong>, and <strong>0.929</strong> for T = 2, 3, 4, and 5 respectively. T = 5 produces the clearest representation; the T = 4 checkpoint shows that the trend is not strictly monotonic. Because each packed query contains current-task support pairs, this establishes information availability—not whether it was computed locally or retrieved from history.</p><a href={links.probing}>Probe results →</a></div>

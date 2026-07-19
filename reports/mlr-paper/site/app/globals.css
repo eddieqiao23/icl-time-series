@@ -78,6 +78,18 @@ p { line-height:1.65; }
 .attention-detail > div:first-child { max-width:760px; }
 .attention-detail > div:first-child p:not(.result-label) { color:var(--muted); }
 .attention-detail > figure { margin-top:46px; }
+.routing-analysis { margin-top:58px; padding-top:48px; border-top:1px solid var(--rule); }
+.routing-analysis > div:first-child { max-width:760px; }
+.routing-analysis > div:first-child p:not(.result-label),.routing-reading { color:var(--muted); }
+.routing-table-wrap { margin-top:30px; overflow-x:auto; }
+.routing-table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+.routing-table th,.routing-table td { padding:14px 16px; border-bottom:1px solid var(--rule); text-align:right; }
+.routing-table thead th { color:var(--green); font-family:var(--font-geist-mono),monospace; font-size:10px; font-weight:500; letter-spacing:.04em; text-transform:uppercase; }
+.routing-table th:first-child,.routing-table td:first-child { text-align:left; }
+.routing-table tbody th { color:var(--ink); font-weight:500; }
+.routing-table td { color:var(--muted); }
+.routing-table .routing-high { color:var(--green); background:var(--sage); font-weight:500; }
+.routing-reading { max-width:850px; margin:26px 0 0; font-size:14px; }
 .result-copy p:not(.result-label) { color:var(--muted); }
 .result-copy strong { color:var(--ink); font-weight:600; }
 .result-copy a,.section-link,.caveat a { color:var(--green); font-size:14px; font-weight:520; }

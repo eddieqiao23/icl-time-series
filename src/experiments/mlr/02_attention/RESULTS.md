@@ -79,3 +79,28 @@ index 49 is self-attention at the final query input. Each bar averages 128
 prompts, four heads, and 10 coefficient pools. The four T panels share their
 y-axis within a layer; layers use separate scales. No untrained panels or
 uncertainty bars are shown.
+
+## Same-component routing ratio across models
+
+The routing ratio divides mean attention per same-component prior task by mean
+attention per different-component prior task. Run 49 self-attention is excluded.
+A value of 1 means no component preference; values above 1 favor matching
+history. The attention means are first averaged across 10 pools and then
+divided.
+
+| T | Layer 1 | Layer 2 | Layer 3 | Layer 4 | Layer 5 | Layer 6 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 2 | 1.00 | 1.02 | 1.00 | 1.56 | 1.04 | 1.04 |
+| 3 | 1.02 | 1.13 | 0.94 | 1.24 | 1.38 | 2.90 |
+| 4 | 1.04 | 1.00 | 1.03 | 2.15 | 1.17 | 1.19 |
+| 5 | 1.02 | 1.03 | 1.43 | 3.67 | 6.35 | 2.27 |
+
+The canonical `T = 3` result reproduces the earlier 2.9x value in layer 6
+(`0.02971 / 0.01025`). Selectivity occurs at different depths across models:
+`T = 2` is mostly nonselective except layer 4; `T = 3` builds a late preference;
+`T = 4` has a transient layer-4 peak; and `T = 5` becomes strongly selective in
+layers 4--6, peaking at 6.35x in layer 5 (`0.03425 / 0.00540`). The large `T =
+5` ratio reflects both increased attention to matching tasks and strong
+suppression of mismatching tasks. Because the ratio is not monotonic over
+layers, component-based routing appears to be an intermediate operation in
+some checkpoints rather than a property that simply accumulates to the output.
