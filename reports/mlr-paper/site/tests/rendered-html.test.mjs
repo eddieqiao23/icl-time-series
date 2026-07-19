@@ -23,6 +23,6 @@ test("renders the complete MLR report", async () => {
   assert.doesNotMatch(html, /Your site is taking shape|SkeletonPreview/);
 });
 test("ships every referenced result figure", async () => {
-  const figures = ["behavior-k3-noisy.png","attention-by-layer.png","final-query-attention-by-task.png","final-query-attention-by-relation.png","probe-beta.png","context-ablation.png","support-ablation.png","ood-imbalance.png","ood-components.png"];
+  const figures = ["behavior-k3-noisy.png","attention-by-layer.png","final-query-attention-by-task.png","final-query-attention-by-relation.png","probe-beta-by-t.png","context-ablation.png","support-ablation.png","ood-imbalance.png","ood-components.png"];
   await Promise.all(figures.map(name => access(new URL(`public/results/${name}`, root))));
 });

@@ -33,3 +33,25 @@ through stage 5 and remains high at the final stage. The raw input and
 untrained controls show that this is not a trivial linear consequence of token
 packing. Probe performance establishes information availability; the causal
 experiments test whether the model uses it.
+
+## Comparison across support-count checkpoints
+
+The same actual-label coefficient probe was run for the trained `T = 2, 3, 4,
+5` checkpoints. Pools, sampled prompts, task positions, and grouped folds are
+matched across models. This comparison plot intentionally excludes the
+untrained, shuffled-label, and raw-input series so the trained-model trajectories
+can be read directly; the original controls remain above as methodology checks.
+
+| T | Stage 4 β R² | Stage 5 β R² | Stage 6 β R² |
+|---:|---:|---:|---:|
+| 2 | 0.720 | 0.802 | 0.779 |
+| 3 | 0.848 | 0.861 | 0.840 |
+| 4 | 0.781 | 0.760 | 0.728 |
+| 5 | 0.896 | 0.929 | 0.895 |
+
+All four checkpoints develop a linearly decodable coefficient representation.
+The `T = 5` model is strongest and reaches 0.929 at stage 5, while `T = 2`
+develops substantially later. The ordering is not monotonic in support count:
+the `T = 4` checkpoint falls below `T = 3` in the late stages. Error bars in
+`beta_r2_by_t.png` are standard errors across 10 coefficient pools after
+averaging positions 30, 40, and 49 within each pool.

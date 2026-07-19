@@ -66,8 +66,8 @@ export default function Home() {
           </div>
         </div>
         <article className="result-row">
-            <div className="result-copy"><p className="result-label">Representation</p><h3>A linear readout recovers the active regression.</h3><p>A held-out linear probe’s β R² climbs from below zero at the embedding to <strong>0.861</strong> at stage 5; component classification reaches <strong>96.8%</strong>. Raw-linear and untrained controls are null, while prompt-grouped cross-validation prevents fold leakage. Because the packed query contains current-task support pairs, this establishes information availability—not whether it was computed locally or retrieved from history.</p><a href={links.probing}>Probe results →</a></div>
-          <Figure src="/results/probe-beta.png" alt="Linear-probe beta coefficient R squared by network stage for trained and control representations" caption="Figure 3. Decodability of the active regression coefficients across the residual stream." />
+            <div className="result-copy"><p className="result-label">Representation</p><h3>A linear readout recovers the active regression across support counts.</h3><p>Prompt-grouped coefficient probes rise through the residual stream for every trained checkpoint. At stage 5, β R² is <strong>0.802</strong>, <strong>0.861</strong>, <strong>0.760</strong>, and <strong>0.929</strong> for T = 2, 3, 4, and 5 respectively. T = 5 produces the clearest representation; the T = 4 checkpoint shows that the trend is not strictly monotonic. Because each packed query contains current-task support pairs, this establishes information availability—not whether it was computed locally or retrieved from history.</p><a href={links.probing}>Probe results →</a></div>
+          <Figure src="/results/probe-beta-by-t.png" alt="Coefficient probe R squared by representation stage for trained models with two through five support pairs" caption="Figure 3. Coefficient decodability for the four trained support-count checkpoints. Bars show one standard error across 10 coefficient pools; no untrained or shuffled-label series are included." />
         </article>
       </section>
 
